@@ -1,0 +1,13 @@
+# escape_from_blockov 최상위 .gitattributes
+
+# 매크로 정의 — [attr] 은 최상위 파일에서만 유효하므로 여기에 둔다.
+# client/escape_from_blockov/.gitattributes (Unity 템플릿)가 이 매크로를 사용한다.
+[attr]lfs               filter=lfs diff=lfs merge=lfs -text
+[attr]unity-json        eol=lf linguist-language=json
+[attr]unity-yaml        merge=unityyamlmerge eol=lf linguist-language=yaml
+
+# 기본: 줄바꿈 변환 없이 바이트 그대로 저장
+#  - 서버 C++ 소스·배치 파일은 CP949 + CRLF, 문서·JS는 UTF-8 + LF → 그대로 보존
+#  - Git for Windows 기본값 core.autocrlf=true 의 변환을 막는다
+#  - client/ 아래는 client/escape_from_blockov/.gitattributes 규칙이 우선한다
+* -text

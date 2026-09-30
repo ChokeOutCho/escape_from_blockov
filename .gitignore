@@ -1,0 +1,18 @@
+# escape_from_blockov 최상위 .gitignore
+# (Unity 관련 규칙은 client/escape_from_blockov/.gitignore 에 있음)
+
+# Visual Studio / MSBuild
+.vs/
+**/x64/
+*.vcxproj.user
+server/GameServer/GameServer/
+
+# 서버 실행 산출물 (로그, 크래시 덤프 등)
+**/syslogs/
+*.log
+*.dmp
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
