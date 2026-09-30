@@ -40,10 +40,28 @@ private:
 	struct PendingDisconnect { unsigned long long handle; uint32_t at; };
 	struct RankEntry { uint32_t id; uint32_t score; };
 
+	// 가방·에어드랍 (game-spec 19.5~19.7)
+	struct Container
+	{
+		uint32_t id;
+		uint8_t type;           // CONTAINER_BAG / CONTAINER_AIRDROP
+		float x, z;
+		int sx, sy;
+		uint8_t specialId;
+		uint16_t durability;
+		uint8_t bandages;
+		uint32_t expireAt;      // 가방만 (에어드랍은 비면 제거)
+	};
+
 	// 수신 처리
 	void HandleMove(GamePlayer* p, PayloadReader& r, uint32_t now);
 	void HandleFire(GamePlayer* p, PayloadReader& r, uint32_t now);
 	void HandleHitReport(GamePlayer* p, PayloadReader& r, int count, uint32_t now);
+	void HandleRoll(GamePlayer* p, PayloadReader& r, uint32_t now);
+	void HandleSwitch(GamePlayer* p, uint8_t slot, uint32_t now);
+	void HandleBandage(GamePlayer* p, uint32_t now);
+	void HandleOpen(GamePlayer* p, uint32_t id, uint32_t now);
+	void HandleTake(GamePlayer* p, uint32_t id, uint8_t item, uint32_t now);
 	bool ValidateHit(GamePlayer* shooter, uint32_t shotSeq, uint8_t pellet, uint32_t targetId,
 	                 float hx, float hz, uint32_t now, GamePlayer** outTarget, const WeaponDef** outWeapon);
 
@@ -59,6 +77,23 @@ private:
 	void ComputeTop3(std::vector<RankEntry>& out) const;
 	void CountCheat(GamePlayer* p, uint32_t now);
 	void UpdateOnlineCount(uint32_t now);
+
+	// v6 아이템·컨테이너
+	void CancelBandage(GamePlayer* p) { p->usingBandage = false; p->bandageUntil = 0; }
+	void SendInventory(GamePlayer* p);
+	void SendHp(GamePlayer* p);                                     // 3x3
+	float FireTokenCap(const WeaponDef* w) const;
+	void CreateBag(GamePlayer* victim, uint32_t now);
+	void TryAirdrop(uint32_t now);
+	void RemoveContainer(uint32_t id);
+	void SendContents(GamePlayer* to, const Container& c);
+	void BroadcastContents(const Container& c);
+	void SendAirdrop(const std::vector<unsigned long long>& hs, const Container& c, bool isNew);
+	void CollectBagsInView(int sx, int sy, std::vector<uint32_t>& out) const;
+	void SendContainerCreate(GamePlayer* to, const std::vector<uint32_t>& ids);
+	void SendContainerDelete(GamePlayer* to, const std::vector<uint32_t>& ids);
+	void AllHandles(std::vector<unsigned long long>& out) const;
+	void UpdateContainers(uint32_t now);
 
 	// 송신
 	void SendTo(GamePlayer* p, Packet* netPacket);                 // Packet::NetAlloc() 패킷, 소유권 이전
@@ -89,6 +124,12 @@ private:
 	SectorMap m_sectors;
 	uint32_t m_nextPlayerId = 1;
 	std::mt19937 m_rng;
+
+	std::unordered_map<uint32_t, Container> m_containers;
+	std::vector<std::vector<uint32_t>> m_bagCells;     // 섹터별 가방 id (시야 계산)
+	uint32_t m_nextContainerId = 1;
+	uint32_t m_nextAirdropAt = 0;
+	uint32_t m_lastContainerCheck = 0;
 
 	std::vector<PendingDisconnect> m_pending;
 	std::vector<RankEntry> m_lastTop;

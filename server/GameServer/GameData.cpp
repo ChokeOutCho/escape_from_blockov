@@ -20,6 +20,16 @@ bool WeaponTable::Load(const char* path, float maxRange)
 		if (!(is >> id >> d.name >> damage >> d.range >> d.projectileSpeed >> interval >> d.projectileRadius
 			>> magazine >> reload >> d.spreadDeg >> pellets >> pierce))
 			continue;
+		// v6 ¼±ÅÃ ¿­: jitterDeg durability slot
+		float jitter = 0; int durability = 0, slot = 2;
+		if (is >> jitter)
+		{
+			if (!(is >> durability)) durability = 0;
+			if (!(is >> slot)) slot = 2;
+		}
+		d.jitterDeg = (jitter < 0 || !std::isfinite(jitter)) ? 0 : (jitter > 45 ? 45 : jitter);
+		d.durability = (uint16_t)(durability < 0 ? 0 : (durability > 65535 ? 65535 : durability));
+		d.slot = (uint8_t)(slot == 1 ? 1 : 2);
 		if (id < 1 || id > 255) { GameLog("[weapons] invalid id %d, skipped", id); continue; }
 		d.id = (uint8_t)id;
 		d.damage = (uint16_t)damage;

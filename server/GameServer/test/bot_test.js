@@ -79,7 +79,7 @@ class Bot {
     }
     return null;
   }
-  async enter(name) { this.send(new W(T.CS_ENTER_GAME).u32(5).name(name)); this.me = await this.wait(T.SC_ENTER_GAME); return this.me; }
+  async enter(name) { this.send(new W(T.CS_ENTER_GAME).u32(6).name(name)); this.me = await this.wait(T.SC_ENTER_GAME); return this.me; }
   now() { return Date.now() - this.t0; }
 }
 
@@ -92,7 +92,7 @@ class Bot {
   check(ea && ea.hp === 100 && Math.abs(ea.speed - 12) < 1e-4 && ea.weapon === 1, 'HP/속도/무기 초기값');
   check(ea && ea.len === 65 && Math.abs(ea.sprint - 1.2) < 1e-4, `SC_ENTER_GAME 65B, 달리기 배율 ${ea && ea.sprint}`);
   const wd = await a.wait(T.SC_WEAPON_DEFS);
-  check(wd && wd.count === 1 && wd.first.damage === 20 && Math.abs(wd.first.range - 32) < 1e-4 && Math.abs(wd.first.speed - 100) < 1e-4, 'SC_WEAPON_DEFS (사거리 32, 탄속 100)');
+  check(wd && wd.count === 3 && wd.len === 3 + 36 * 3 && wd.first.damage === 20 && Math.abs(wd.first.range - 32) < 1e-4 && Math.abs(wd.first.speed - 100) < 1e-4, `SC_WEAPON_DEFS v6 (3종, 36B 항목, 권총 사거리 32·탄속 100) len ${wd && wd.len}`);
   const pc1 = await a.wait(T.SC_PLAYER_COUNT);
   check(pc1 && pc1.total === 1, `입장 시 SC_PLAYER_COUNT 수신 → ${pc1 && pc1.total}`);
   const rk0 = await a.wait(T.SC_RANK);

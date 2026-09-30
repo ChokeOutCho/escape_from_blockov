@@ -41,6 +41,21 @@ struct GameConfig
 	int spawnOffsetRadius = 20;
 	float sprintMultiplier = 1.2f;     // Shift 달리기 속도 배율 (클라에 SC_ENTER_GAME으로 전달)
 
+	// v6 아이템·구르기·에어드랍·가방 (game-spec 19)
+	int airdropIntervalMs = 300000;
+	int airdropMax = 2;
+	int bagLifetimeMs = 60000;
+	int startBandages = 2;
+	int maxBandages = 5;
+	int bandageHeal = 50;
+	int bandageMs = 2000;
+	int rollMs = 250;
+	float rollSpeedMult = 3.0f;
+	int rollCooldownMs = 3000;
+	float interactRange = 2.5f;
+	int bagOpenMs = 1000;
+	int airdropOpenMs = 2000;
+
 	// 테스트 모드: 모든 플레이어를 한 섹터(test_spawn_sector_x/y, 기본 0,0)에 스폰
 	bool testMode = false;
 	int testSpawnSectorX = 0;
@@ -117,6 +132,19 @@ private:
 		else if (k == "obstacle_map") obstacleMapFile = v;
 		else if (k == "spawn_offset_radius") spawnOffsetRadius = n;
 		else if (k == "sprint_multiplier") sprintMultiplier = fl;
+		else if (k == "airdrop_interval_ms") airdropIntervalMs = n;
+		else if (k == "airdrop_max") airdropMax = n;
+		else if (k == "bag_lifetime_ms") bagLifetimeMs = n;
+		else if (k == "start_bandages") startBandages = n;
+		else if (k == "max_bandages") maxBandages = n;
+		else if (k == "bandage_heal") bandageHeal = n;
+		else if (k == "bandage_ms") bandageMs = n;
+		else if (k == "roll_ms") rollMs = n;
+		else if (k == "roll_speed_mult") rollSpeedMult = fl;
+		else if (k == "roll_cooldown_ms") rollCooldownMs = n;
+		else if (k == "interact_range") interactRange = fl;
+		else if (k == "bag_open_ms") bagOpenMs = n;
+		else if (k == "airdrop_open_ms") airdropOpenMs = n;
 		else if (k == "test_mode") testMode = ToBool(v);
 		else if (k == "test_spawn_sector_x") testSpawnSectorX = n;
 		else if (k == "test_spawn_sector_y") testSpawnSectorY = n;

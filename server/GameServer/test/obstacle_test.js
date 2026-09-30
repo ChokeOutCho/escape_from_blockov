@@ -57,7 +57,7 @@ class Bot {
   connect() { return new Promise(r => { this.s = net.connect(this.port, this.host, r); this.s.on('data', d => { this.buf = Buffer.concat([this.buf, d]); while (this.buf.length >= 5) { const l = this.buf.readUInt16LE(1); if (this.buf.length < 5 + l) break; this.msgs.push(Buffer.from(this.buf.subarray(5, 5 + l))); this.buf = this.buf.subarray(5 + l); } }); }); }
   async wait(type, pred = () => true, ms = 1500) { const end = Date.now() + ms; while (Date.now() < end) { const i = this.msgs.findIndex(p => p.readUInt16LE(0) === type && pred(p)); if (i >= 0) return this.msgs.splice(i, 1)[0]; await sleep(10); } return null; }
   async enter() {
-    this.s.write(pk(3000, (b, o) => { b.writeUInt32LE(5, o); o += 4; for (let i = 0; i < 12; i++) { b.writeUInt16LE(i < this.name.length ? this.name.charCodeAt(i) : 0, o); o += 2; } return o; }));
+    this.s.write(pk(3000, (b, o) => { b.writeUInt32LE(6, o); o += 4; for (let i = 0; i < 12; i++) { b.writeUInt16LE(i < this.name.length ? this.name.charCodeAt(i) : 0, o); o += 2; } return o; }));
     const e = await this.wait(3100);
     this.id = e.readUInt32LE(3); this.x = e.readFloatLE(8); this.z = e.readFloatLE(12); this.offset = e.readUInt32LE(29) - this.now(); this.mapHash = e.readUInt32LE(57);
     return e;

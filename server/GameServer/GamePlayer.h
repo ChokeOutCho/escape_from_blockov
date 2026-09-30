@@ -141,6 +141,26 @@ public:
 	uint32_t lastShotSeq = 0;
 	float fireTokens = 3;
 
+	// v6 인벤토리 (game-spec 19.1)
+	uint8_t equipped = SLOT_PISTOL;     // 1 특수 총, 2 권총
+	uint8_t specialWeaponId = 0;        // 0 = 없음
+	uint16_t specialDurability = 0;
+	uint8_t bandages = 0;
+
+	// 구르기 (19.3)
+	uint32_t rollUntil = 0;             // 구르기 끝 시각 (이 전의 CS_MOVE 무시)
+	uint32_t rollReadyAt = 0;           // 다음 구르기 가능 시각
+	bool rolling = false;
+	bool rollCheckPending = false;      // 구르기 후 첫 CS_MOVE에서 도착점 차이 검사
+
+	// 붕대 (19.4)
+	uint32_t bandageUntil = 0;
+	bool usingBandage = false;
+
+	// 상호작용 (19.5)
+	uint32_t lastMovedTime = 0;
+	uint32_t openContainerId = 0;
+
 	ViolationCounter moveViolations;
 	ViolationCounter cheatViolations;
 
