@@ -42,6 +42,7 @@ namespace Blockov.Game
 
         // 붕대
         float _bandageStart = -10f;
+        Vector2 _lastMoveDir;
         bool _usingBandage;
 
         // 조준선
@@ -164,7 +165,10 @@ namespace Blockov.Game
 
             if (slotPressed == 1 || slotPressed == 2) SwitchWeapon((byte)slotPressed);
             else if (slotPressed == 3) UseBandage();
-            if (rollPressed && !IsRolling && Time.time >= _rollReadyAt) StartRoll(aimDir);
+            // 구르기 방향 = 키보드 이동 방향, 입력이 없으면 마지막 이동 방향(한 번도 안 움직였으면 조준 방향) (21.5)
+            if (HasMoveInput) _lastMoveDir = input.normalized;
+            if (rollPressed && !IsRolling && Time.time >= _rollReadyAt)
+                StartRoll(HasMoveInput ? input.normalized : (_lastMoveDir.sqrMagnitude > 0.5f ? _lastMoveDir : aimDir));
 
             if (IsRolling)
             {
@@ -175,8 +179,9 @@ namespace Blockov.Game
             }
             else
             {
-                IsSprinting = sprint && HasMoveInput;
-                float speed = GameSession.MoveSpeed * (IsSprinting ? GameSession.SprintMultiplier : 1f);
+                // 붕대 사용 중: 달리기 불가, 걷기 속도의 절반 (21.4)
+                IsSprinting = sprint && HasMoveInput && !_usingBandage;
+                float speed = GameSession.MoveSpeed * (_usingBandage ? GameSession.BandageMoveMult : (IsSprinting ? GameSession.SprintMultiplier : 1f));
                 _vel = HasMoveInput ? input.normalized * speed : Vector2.zero;
                 MoveWithCollision(_vel * dt);
             }

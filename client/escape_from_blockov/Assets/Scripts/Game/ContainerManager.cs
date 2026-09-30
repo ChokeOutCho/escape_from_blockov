@@ -97,7 +97,7 @@ namespace Blockov.Game
             bool isNew = r.ReadByte() != 0;
             var info = Add(id, TypeAirdrop, x, z);
             info.SectorX = sx; info.SectorY = sy;
-            if (isNew) LastNotice = new Notice { Text = $"에어드랍 투하!  섹터 {GameSession.SectorLabel(sx, sy)}", Time = Time.time };
+            if (isNew) LastNotice = new Notice { Text = $"에어드랍 투하!  {GameSession.RegionLabel(sx, sy)}", Time = Time.time };
         }
 
         public void OnContents(PacketReader r)

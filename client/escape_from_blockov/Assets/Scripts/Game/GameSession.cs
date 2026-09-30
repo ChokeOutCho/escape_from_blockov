@@ -165,6 +165,28 @@ namespace Blockov.Game
             return SectorLabel(sx, sy);
         }
 
+        ////////////////////////////////////////////////////////////////
+        // 구역 번호 (game-spec 21.2): 섹터 3x3 = 1구역, 10x10 = 1~100, 왼쪽 위(북서) 1부터 오른쪽으로, 행 단위로 아래로
+        ////////////////////////////////////////////////////////////////
+        public const int RegionSectors = 3;
+        public static int RegionCount => (SectorCount + RegionSectors - 1) / RegionSectors;
+
+        public static int RegionNumber(int sx, int sy)
+        {
+            int gx = UnityEngine.Mathf.Clamp(sx / RegionSectors, 0, RegionCount - 1);
+            int gy = UnityEngine.Mathf.Clamp(sy / RegionSectors, 0, RegionCount - 1);
+            return (RegionCount - 1 - gy) * RegionCount + gx + 1;
+        }
+
+        public static string RegionLabel(int sx, int sy) => $"구역 {RegionNumber(sx, sy)}";
+
+        public static string RegionLabelAt(UnityEngine.Vector2 worldXZ)
+        {
+            int sx = UnityEngine.Mathf.Clamp(UnityEngine.Mathf.FloorToInt(worldXZ.x / SectorGrid.DefaultSectorSize), 0, SectorCount - 1);
+            int sy = UnityEngine.Mathf.Clamp(UnityEngine.Mathf.FloorToInt(worldXZ.y / SectorGrid.DefaultSectorSize), 0, SectorCount - 1);
+            return RegionLabel(sx, sy);
+        }
+
         public static string WeaponName(byte id)
         {
             switch (id)
@@ -182,6 +204,7 @@ namespace Blockov.Game
         public const byte SlotSpecial = 1, SlotPistol = 2, SlotBandage = 3;
         public const int MaxBandages = 5;
         public const float BandageSeconds = 2f;
+        public const float BandageMoveMult = 0.5f;     // 붕대 사용 중 걷기 속도 배율 (21.4)
         public const float RollSeconds = 0.25f, RollSpeedMult = 3f, RollCooldown = 3f;
         public const float InteractRange = 2.5f, LootCloseRange = 3f;
         public const float BagOpenSeconds = 1f, AirdropOpenSeconds = 2f;

@@ -137,7 +137,7 @@ namespace Blockov.Game
             var net = NetworkManager.Instance;
             string clock = net != null ? $"offset {net.Clock.OffsetMs:0}ms" : "";
             GUI.Label(new Rect(0, Screen.height - UiKit.Px(24), Screen.width - UiKit.Px(10), UiKit.Px(20)),
-                $"({p.x:0.0}, {p.y:0.0})  섹터 {GameSession.SectorLabelAt(p)}  {clock}  zoom {(_gc.Rig ? _gc.Rig.Zoom : 0):0}", dbg);
+                $"({p.x:0.0}, {p.y:0.0})  {GameSession.RegionLabelAt(p)}  {clock}  zoom {(_gc.Rig ? _gc.Rig.Zoom : 0):0}", dbg);
         }
 
         void DrawHitMarker()
@@ -236,7 +236,7 @@ namespace Blockov.Game
                 float bw = UiKit.Px(260), bh = UiKit.Px(14);
                 var br = new Rect((Screen.width - bw) * 0.5f, y - UiKit.Px(30), bw, bh);
                 UiKit.Bar(br, bandage, new Color(0.35f, 0.85f, 0.45f), new Color(0, 0, 0, 0.6f));
-                UiKit.ShadowLabel(new Rect(br.x, br.y - UiKit.Px(20), bw, UiKit.Px(18)), "붕대 사용 중 (사격·구르기·전환 시 취소)", UiKit.Sized(UiKit.LabelCenter, 13));
+                UiKit.ShadowLabel(new Rect(br.x, br.y - UiKit.Px(20), bw, UiKit.Px(18)), "붕대 사용 중 · 이동 속도 절반 (사격·구르기·전환 시 취소)", UiKit.Sized(UiKit.LabelCenter, 13));
             }
         }
 
@@ -405,7 +405,7 @@ namespace Blockov.Game
             s_lootRect = r;
             UiKit.Panel(r, 0.82f);
             Border(r, UiKit.Px(2), info.Type == ContainerManager.TypeAirdrop ? new Color(0.35f, 0.6f, 1f) : new Color(0.7f, 0.5f, 0.3f));
-            string title = info.Type == ContainerManager.TypeAirdrop ? $"에어드랍  <color=#aaaaaa>섹터 {GameSession.SectorLabel(info.SectorX, info.SectorY)}</color>" : "가방";
+            string title = info.Type == ContainerManager.TypeAirdrop ? $"에어드랍  <color=#aaaaaa>{GameSession.RegionLabel(info.SectorX, info.SectorY)}</color>" : "가방";
             GUI.Label(new Rect(r.x + UiKit.Px(14), r.y + UiKit.Px(8), w, UiKit.Px(30)), $"<b>{title}</b>", UiKit.Sized(UiKit.Label, 20));
             if (GUI.Button(new Rect(r.xMax - UiKit.Px(40), r.y + UiKit.Px(8), UiKit.Px(30), UiKit.Px(28)), "X", UiKit.Sized(UiKit.Button, 16)))
                 cm.CloseLoot();
@@ -446,13 +446,13 @@ namespace Blockov.Game
         }
 
         ////////////////////////////////////////////////////////////////
-        // 전체 맵 (M): 지도 좌표(가장자리 A~AD / 1~30), 나, 카메라 범위, 에어드랍. 적은 표시하지 않음 (19.8, 20.3~20.4)
+        // 전체 맵 (M): 구역 번호 1~100(3x3 섹터), 나, 카메라 범위, 에어드랍. 적은 표시하지 않음 (19.8, 20.3, 21.2~21.3)
         //  휠 = 1~8배 줌(마우스 지점 고정), 좌클릭 드래그 = 이동. 열 때마다 1배·내 위치 기준
         ////////////////////////////////////////////////////////////////
         const float MapMaxZoom = 8f;
         Texture2D _minimap;
-        GUIStyle _edgeStyle, _cellStyle;
-        int _edgeStyleSize = -1, _cellStyleSize = -1;
+        GUIStyle _regionStyle;
+        int _regionStyleSize = -1;
         float _mapZoom = 1f;
         Vector2 _mapCenter;
         Rect _mapRect;
@@ -527,7 +527,7 @@ namespace Blockov.Game
             _mapRect = r;
             UiKit.Rect(new Rect(r.x - band - 6, r.y - band - UiKit.Px(36), r.width + band * 2 + 12, r.height + band * 2 + UiKit.Px(42)), new Color(0, 0, 0, 0.8f));
             GUI.Label(new Rect(r.x - band, r.y - band - UiKit.Px(34), r.width + band * 2, UiKit.Px(28)),
-                $"<b>전체 맵</b>  <color=#aaaaaa>(M 닫기 · 휠 줌 x{_mapZoom:0.0} · 드래그 이동 · 한 칸 {SectorGrid.DefaultSectorSize}m · 파랑 에어드랍)</color>", UiKit.Sized(UiKit.Label, 16));
+                $"<b>전체 맵</b>  <color=#aaaaaa>(M/Esc 닫기 · 휠 줌 x{_mapZoom:0.0} · 드래그 이동 · 구역 1칸 {SectorGrid.DefaultSectorSize * GameSession.RegionSectors}m · 파랑 에어드랍)</color>", UiKit.Sized(UiKit.Label, 16));
 
             float v = MapViewSize;
             float minX = _mapCenter.x - v * 0.5f, minZ = _mapCenter.y - v * 0.5f;
@@ -537,55 +537,37 @@ namespace Blockov.Game
             Vector2 ToScreen(Vector2 w) => new Vector2(r.x + (w.x - minX) / v * r.width, r.yMax - (w.y - minZ) / v * r.height);
             bool Visible(Vector2 p) => p.x >= r.x - 2 && p.x <= r.xMax + 2 && p.y >= r.y - 2 && p.y <= r.yMax + 2;
 
-            // 지도 좌표: 위·아래 열 문자, 왼쪽·오른쪽 행 번호 (20.4)
-            float sec = SectorGrid.DefaultSectorSize;
-            int count = GameSession.SectorCount;
-            float cell = sec / v * r.width;
-            int efs = Mathf.Clamp(Mathf.RoundToInt(Mathf.Min(cell * 0.45f, band * 0.7f)), 7, 16);
-            if (_edgeStyle == null || _edgeStyleSize != efs)
-            {
-                _edgeStyle = new GUIStyle(UiKit.LabelCenter) { fontSize = efs, richText = false, clipping = TextClipping.Overflow };
-                _edgeStyle.normal.textColor = new Color(0.9f, 0.9f, 0.8f, 0.9f);
-                _edgeStyleSize = efs;
-            }
-            int cfs = Mathf.Clamp(Mathf.RoundToInt(cell * 0.18f), 8, 28);
-            if (_cellStyle == null || _cellStyleSize != cfs)
-            {
-                _cellStyle = new GUIStyle(UiKit.LabelCenter) { fontSize = cfs, richText = false, clipping = TextClipping.Overflow };
-                _cellStyle.normal.textColor = new Color(1f, 1f, 1f, 0.22f);
-                _cellStyleSize = cfs;
-            }
-            if (Event.current.type == EventType.Repaint)
-            {
-                for (int sx = 0; sx < count; sx++)
-                {
-                    float cx = ToScreen(new Vector2((sx + 0.5f) * sec, 0)).x;
-                    if (cx < r.x || cx > r.xMax) continue;
-                    string col = GameSession.SectorColumn(sx);
-                    GUI.Label(new Rect(cx - cell / 2, r.y - band, cell, band), col, _edgeStyle);
-                    GUI.Label(new Rect(cx - cell / 2, r.yMax, cell, band), col, _edgeStyle);
-                }
-                for (int sy = 0; sy < count; sy++)
-                {
-                    float cy = ToScreen(new Vector2(0, (sy + 0.5f) * sec)).y;
-                    if (cy < r.y || cy > r.yMax) continue;
-                    string row = GameSession.SectorRow(sy).ToString();
-                    GUI.Label(new Rect(r.x - band, cy - cell / 2, band, cell), row, _edgeStyle);
-                    GUI.Label(new Rect(r.xMax, cy - cell / 2, band, cell), row, _edgeStyle);
-                }
-                // 줌인해 칸이 충분히 크면 칸 안에 흐린 좌표
-                if (cell >= UiKit.Px(60))
-                    for (int sy = 0; sy < count; sy++)
-                        for (int sx = 0; sx < count; sx++)
-                        {
-                            var c = ToScreen(new Vector2((sx + 0.5f) * sec, (sy + 0.5f) * sec));
-                            if (c.x < r.x || c.x > r.xMax || c.y < r.y || c.y > r.yMax) continue;
-                            GUI.Label(new Rect(c.x - cell / 2, c.y - cell / 2, cell, cell), GameSession.SectorLabel(sx, sy), _cellStyle);
-                        }
-            }
-
             GUI.BeginClip(r);
             Vector2 L(Vector2 p) => new Vector2(p.x - r.x, p.y - r.y);
+
+            // 구역(3x3 섹터 = 150m) 경계선 굵게 + 가운데 큰 번호 1~100 (21.2)
+            float reg = SectorGrid.DefaultSectorSize * GameSession.RegionSectors;
+            int regCount = GameSession.RegionCount;
+            float regPx = reg / v * r.width;
+            var border = new Color(0.95f, 0.9f, 0.7f, 0.45f);
+            float bw = Mathf.Max(2f, UiKit.Px(2));
+            for (int i = 0; i <= regCount; i++)
+            {
+                var px = L(ToScreen(new Vector2(i * reg, i * reg)));
+                if (px.x >= -bw && px.x <= r.width + bw) UiKit.Rect(new Rect(px.x - bw / 2, 0, bw, r.height), border);
+                if (px.y >= -bw && px.y <= r.height + bw) UiKit.Rect(new Rect(0, px.y - bw / 2, r.width, bw), border);
+            }
+            int rfs = Mathf.Clamp(Mathf.RoundToInt(regPx * 0.32f), 10, 72);
+            if (_regionStyle == null || _regionStyleSize != rfs)
+            {
+                _regionStyle = new GUIStyle(UiKit.LabelCenter) { fontSize = rfs, fontStyle = FontStyle.Bold, richText = false, clipping = TextClipping.Overflow };
+                _regionStyle.normal.textColor = new Color(1f, 1f, 1f, 0.3f);
+                _regionStyleSize = rfs;
+            }
+            if (Event.current.type == EventType.Repaint)
+                for (int gy = 0; gy < regCount; gy++)
+                    for (int gx = 0; gx < regCount; gx++)
+                    {
+                        var c = L(ToScreen(new Vector2((gx + 0.5f) * reg, (gy + 0.5f) * reg)));
+                        if (c.x < -regPx || c.x > r.width + regPx || c.y < -regPx || c.y > r.height + regPx) continue;
+                        GUI.Label(new Rect(c.x - regPx / 2, c.y - regPx / 2, regPx, regPx),
+                            GameSession.RegionNumber(gx * GameSession.RegionSectors, gy * GameSession.RegionSectors).ToString(), _regionStyle);
+                    }
 
             // 카메라가 보는 범위
             if (cam != null && cam.orthographic)
@@ -617,7 +599,7 @@ namespace Blockov.Game
                     float s = UiKit.Px(12);
                     UiKit.Rect(new Rect(p.x - s / 2 - 2, p.y - s / 2 - 2, s + 4, s + 4), new Color(1f, 0.85f, 0.2f, blink));
                     UiKit.Rect(new Rect(p.x - s / 2, p.y - s / 2, s, s), new Color(0.2f, 0.45f, 0.95f));
-                    UiKit.ShadowLabel(new Rect(p.x + s, p.y - UiKit.Px(10), UiKit.Px(160), UiKit.Px(20)), $"에어드랍 {GameSession.SectorLabel(ad.SectorX, ad.SectorY)}", lab, new Color(1f, 0.9f, 0.5f));
+                    UiKit.ShadowLabel(new Rect(p.x + s, p.y - UiKit.Px(10), UiKit.Px(160), UiKit.Px(20)), $"에어드랍 {GameSession.RegionLabel(ad.SectorX, ad.SectorY)}", lab, new Color(1f, 0.9f, 0.5f));
                 }
             }
 
@@ -625,10 +607,7 @@ namespace Blockov.Game
             if (Visible(meS))
             {
                 var me = L(meS);
-                UiKit.Rect(new Rect(me.x - 5, me.y - 5, 10, 10), new Color(0.3f, 0.7f, 1f));
-                float ang = _gc.LocalView.AimAngle * Mathf.Deg2Rad;
-                for (int i = 1; i <= 4; i++)
-                    UiKit.Rect(new Rect(me.x + Mathf.Cos(ang) * i * 4 - 1, me.y - Mathf.Sin(ang) * i * 4 - 1, 3, 3), new Color(0.3f, 0.7f, 1f));
+                UiKit.Rect(new Rect(me.x - 5, me.y - 5, 10, 10), new Color(0.3f, 0.7f, 1f));     // 조준 방향 점은 표시하지 않음 (21.3)
             }
             GUI.EndClip();
         }

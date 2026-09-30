@@ -98,6 +98,7 @@ namespace Blockov.Game
 #if ENABLE_INPUT_SYSTEM
             var kb = UnityEngine.InputSystem.Keyboard.current;
             if (kb != null && kb.mKey.wasPressedThisFrame) ShowMinimap = !ShowMinimap;
+            if (kb != null && kb.escapeKey.wasPressedThisFrame) ShowMinimap = false;   // Esc로 맵 닫기 (21.3)
 #endif
             _hits.Update();
             _observerShots.RemoveAll(p => p == null);
