@@ -34,6 +34,9 @@ void Dummy::Init(int idx)
 	index = idx;
 	InitializeSRWLock(&lock);
 	m_rng.seed((uint32_t)idx * 2654435761u ^ NowMs());
+	float lo = std::clamp(g_cfg.weaknessMin, 0.0f, 1.0f), hi = std::clamp(g_cfg.weaknessMax, 0.0f, 1.0f);
+	if (hi < lo) std::swap(lo, hi);
+	m_weak = lo + (hi - lo) * Rand01();
 	m_reconnectAt = NowMs() + (uint32_t)RandInt(0, 500);
 }
 
@@ -388,6 +391,12 @@ void Dummy::GameTick(uint32_t now)
 	{
 		SelectTarget(now);
 		m_nextTargetScan = now + 250 + (uint32_t)RandInt(0, 100);
+		// 반응 속도: 새 대상을 잡으면 첫 사격까지 reaction_base_ms × 약함 만큼 더 기다린다
+		if (m_targetId != m_lastTargetId)
+		{
+			m_lastTargetId = m_targetId;
+			if (m_targetId) m_firstShotAt = now + (uint32_t)(g_cfg.reactionBaseMs * m_weak);
+		}
 	}
 
 	auto it = (canFire && m_targetId) ? m_remotes.find(m_targetId) : m_remotes.end();
@@ -416,7 +425,8 @@ void Dummy::GameTick(uint32_t now)
 			}
 			SendMoveIfNeeded(now);      // 정지·조준을 먼저 알린 뒤 사격 (서버 원점 검사)
 			// 대상이 구르는 중이면(SC_ROLL 후 0.25초) 쏘지 않는다: 되감기 위치가 경로 중간이라 명중 보고가 거부됨
-			if (TimeDiff(now, m_nextFire) >= 0 && TimeDiff(now, t.t) >= 0) Fire(now, tx, tz, t.vx, t.vz);
+			if (TimeDiff(now, m_nextFire) >= 0 && TimeDiff(now, t.t) >= 0 && TimeDiff(now, m_firstShotAt) >= 0)
+				Fire(now, tx, tz, t.vx, t.vz);
 			return;
 		}
 	}
@@ -531,15 +541,21 @@ void Dummy::SelectTarget(uint32_t now)
 
 void Dummy::Fire(uint32_t now, float tx, float tz, float tvx, float tvz)
 {
-	// 리드 사격: 탄 도착 시점의 대상 위치를 노린다 (1회 보정)
+	// 조준점: 확률 (1 - 약함)로 리드(탄 도착 시점의 대상 위치 예측), 아니면 현재 위치 (game-spec 20.5)
 	float dx = tx - m_x, dz = tz - m_z;
 	float flight = sqrtf(dx * dx + dz * dz) / m_weapon.speed;
-	float ix = tx + tvx * flight, iz = tz + tvz * flight;
-	dx = ix - m_x; dz = iz - m_z;
+	float ax = tx, az = tz;
+	if (Rand01() >= m_weak) { ax = tx + tvx * flight; az = tz + tvz * flight; }
+	dx = ax - m_x; dz = az - m_z;
 	float dist = sqrtf(dx * dx + dz * dz);
 	if (dist < 0.01f || dist > m_weapon.range) { m_targetId = 0; return; }
-	if (g_map.SegmentBlocked(m_x, m_z, ix, iz, true)) { m_targetId = 0; return; }     // 벽에 막힘
-	flight = dist / m_weapon.speed;
+	if (g_map.SegmentBlocked(m_x, m_z, ax, az, true)) { m_targetId = 0; return; }     // 벽에 막힘
+
+	// 조준 오차 ±aim_error_max_deg × 약함
+	float err = (Rand01() * 2.0f - 1.0f) * g_cfg.aimErrorMaxDeg * m_weak * PI_F / 180.0f;
+	float ux = dx / dist, uz = dz / dist;
+	float c = cosf(err), sn = sinf(err);
+	float fx = ux * c - uz * sn, fz = ux * sn + uz * c;
 
 	// ViewTime: 내가 알고 있는 대상 위치에 해당하는 서버 시각 (= 추정 서버 시각 - 편도 지연)
 	int oneWay = m_bestRtt < (1 << 29) ? m_bestRtt / 2 : 0;
@@ -550,20 +566,30 @@ void Dummy::Fire(uint32_t now, float tx, float tz, float tvx, float tvz)
 	w.W32(m_shotSeq);
 	w.W8(m_weapon.id);
 	w.WF(m_x); w.WF(m_z);
-	w.WF(dx / dist); w.WF(dz / dist);
+	w.WF(fx); w.WF(fz);
 	w.W32(viewTime);
 	w.W16(0);
 	Send(w);
 	g_stats.shots++;
 
-	// 연사 간격 + 10% 여유 (서버 토큰 버킷 1.1배 충전)
-	m_nextFire = now + (uint32_t)(m_weapon.intervalMs * 1.1f) + (uint32_t)RandInt(0, 20);
+	// 연사 간격 × 1.1(서버 토큰 버킷 여유) × (1 + 약함)
+	m_nextFire = now + (uint32_t)(m_weapon.intervalMs * 1.1f * (1.0f + m_weak)) + (uint32_t)RandInt(0, 20);
+
+	// 실제 탄 경로로 명중 판정: 탄 도착 시점의 대상 예상 위치 P와 발사 직선의 최근접점
+	float px = tx + tvx * flight, pz = tz + tvz * flight;
+	float s = (px - m_x) * fx + (pz - m_z) * fz;
+	if (s <= 0 || s > m_weapon.range) return;
+	float cx = m_x + fx * s, cz = m_z + fz * s;
+	float ex = px - cx, ez = pz - cz;
+	float hitR = m_radius + m_weapon.radius;
+	if (ex * ex + ez * ez > hitR * hitR) return;                 // 빗나감 → 보고하지 않음
+	if (g_map.SegmentBlocked(m_x, m_z, cx, cz, true)) return;
 
 	PendingHit h;
-	h.due = now + (uint32_t)(flight * 1000.0f) + 20;
+	h.due = now + (uint32_t)(s / m_weapon.speed * 1000.0f) + 20;
 	h.shotSeq = m_shotSeq;
 	h.targetId = m_targetId;
-	h.hx = ix; h.hz = iz;
+	h.hx = cx; h.hz = cz;
 	m_hits.push_back(h);
 }
 

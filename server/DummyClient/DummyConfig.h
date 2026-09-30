@@ -32,6 +32,12 @@ struct DummyConfig
 	float sprintChance = 0.3f;      // 배회 중 달리기 비율
 	// 구르기 (game-spec 19.10): 교전 중 쿨타임 후 초당 확률(적의 옆 방향), 배회 중 쿨타임마다 확률(진행 방향)
 	bool roll = true;
+	// 더미 강도 (game-spec 20.5): 더미마다 약함 w를 [weaknessMin, weaknessMax]에서 균등 무작위로 1회 뽑아
+	// 반응 지연 = reactionBaseMs × w, 연사 간격 × (1 + w), 조준 오차 ±aimErrorMaxDeg × w, 리드 사격 확률 1 - w
+	float weaknessMin = 0.0f;
+	float weaknessMax = 1.0f;
+	int reactionBaseMs = 300;
+	float aimErrorMaxDeg = 8.0f;
 	float rollCombatPerSec = 0.3f;
 	float rollWanderChance = 0.1f;
 	int rollCooldownMs = 3000;      // 서버 roll_cooldown_ms
@@ -101,6 +107,10 @@ private:
 		else if (k == "fire") fire = ToBool(v);
 		else if (k == "engage_range") engageRange = fl;
 		else if (k == "sprint_chance") sprintChance = fl;
+		else if (k == "weakness_min") weaknessMin = fl;
+		else if (k == "weakness_max") weaknessMax = fl;
+		else if (k == "reaction_base_ms") reactionBaseMs = n;
+		else if (k == "aim_error_max_deg") aimErrorMaxDeg = fl;
 		else if (k == "roll") roll = (v == "true" || v == "1");
 		else if (k == "roll_combat_per_sec") rollCombatPerSec = fl;
 		else if (k == "roll_wander_chance") rollWanderChance = fl;

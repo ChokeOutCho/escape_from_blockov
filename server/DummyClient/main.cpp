@@ -116,7 +116,7 @@ namespace
 		return s;
 	}
 
-	struct StateCounts { int idle = 0, connecting = 0, entering = 0, inGame = 0, dead = 0, closing = 0; };
+	struct StateCounts { int idle = 0, connecting = 0, entering = 0, inGame = 0, dead = 0, closing = 0; double weakSum = 0; };
 
 	StateCounts CountStates()
 	{
@@ -125,6 +125,7 @@ namespace
 		for (int i = 0; i < n; i++)
 		{
 			const Dummy* d = g_dummies[i];
+			c.weakSum += d->Weakness();
 			NetState ns = d->Net();
 			if (ns == NetState::Idle) c.idle++;
 			else if (ns == NetState::Connecting) c.connecting++;
@@ -218,8 +219,12 @@ namespace
 		Line(" [전투]    사격 %.0f/s   명중보고 %.0f/s   명중확인 %.0f/s   사망 %.0f/s   킬 %.0f/s   구르기 %.0f/s",
 		     rate(cur.shots, prev.shots), rate(cur.hitsReported, prev.hitsReported), rate(cur.hitsConfirmed, prev.hitsConfirmed),
 		     rate(cur.deaths, prev.deaths), rate(cur.kills, prev.kills), rate(cur.rolls, prev.rolls));
-		Line("           누적 사격 %lld  명중보고 %lld  명중확인 %lld  사망 %lld",
-		     cur.shots, cur.hitsReported, cur.hitsConfirmed, cur.deaths);
+		{
+			StateCounts wc = CountStates();
+			int nAll = g_allocated.load();
+			Line("           누적 사격 %lld  명중보고 %lld  명중확인 %lld  사망 %lld   약함 평균 %.2f (%.1f~%.1f)",
+			     cur.shots, cur.hitsReported, cur.hitsConfirmed, cur.deaths, nAll ? wc.weakSum / nAll : 0.0, g_cfg.weaknessMin, g_cfg.weaknessMax);
+		}
 		Line(" [검증]    위치보정 %.0f/s (누적 %lld)   킥: 타임아웃 %lld  잘못된패킷 %lld  치트의심 %lld  서버종료 %lld",
 		     rate(cur.corrections, prev.corrections), cur.corrections, cur.kicks[1], cur.kicks[2], cur.kicks[3], cur.kicks[4]);
 		Line("");

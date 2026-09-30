@@ -63,6 +63,7 @@ public:
 	// 대시보드용 (lock 없이 읽는 대략값)
 	NetState Net() const { return net; }
 	GameState Game() const { return game; }
+	float Weakness() const { return m_weak; }
 
 public:
 	int index = 0;
@@ -140,6 +141,11 @@ private:
 	std::unordered_map<uint32_t, RemotePlayer> m_remotes;
 	uint32_t m_targetId = 0;
 	std::vector<PendingHit> m_hits;
+
+	// 강도 (game-spec 20.5)
+	float m_weak = 0;
+	uint32_t m_lastTargetId = 0;
+	uint32_t m_firstShotAt = 0;
 
 	std::mt19937 m_rng;
 };
