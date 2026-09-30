@@ -1,0 +1,11 @@
+{
+    "port": 10301,
+    "workerTH_Pool_size": 4,
+    "concurrentTH_size": 4,
+    "maxofsession": 10000,
+    "encryption": false,
+    "encryption_header_code": 119,
+    "encryption_fixed_key": 50,
+    "zerocopy": true,
+    "sendbuf": 1000
+}

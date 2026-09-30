@@ -1,0 +1,105 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="NetLib">
+      <UniqueIdentifier>{be979772-c99d-4ad9-8dd9-c4653f4b527b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Utils">
+      <UniqueIdentifier>{517940b1-d860-4559-aae7-350f37bfb772}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="CommonProtocol.h" />
+    <ClInclude Include="ContentServer.h" />
+    <ClInclude Include="Define.h" />
+    <ClInclude Include="MonitorClient.h" />
+    <ClInclude Include="Player.h" />
+    <ClInclude Include="Utils\CrashDump.h">
+      <Filter>Utils</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\LockFreePool.h">
+      <Filter>Utils</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\LockFreeQueue.h">
+      <Filter>Utils</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\LockFreeStack.h">
+      <Filter>Utils</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\Logger.h">
+      <Filter>Utils</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\ObjectPool.h">
+      <Filter>Utils</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\Parser.h">
+      <Filter>Utils</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\Profiler.h">
+      <Filter>Utils</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\RingBuffer.h">
+      <Filter>Utils</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\SimpleEncoder.h">
+      <Filter>Utils</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\SystemMonitor.h">
+      <Filter>Utils</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\TLSObjectPool.h">
+      <Filter>Utils</Filter>
+    </ClInclude>
+    <ClInclude Include="NetLib\NetLib_Client.h">
+      <Filter>NetLib</Filter>
+    </ClInclude>
+    <ClInclude Include="NetLib\NetLib_Content.h">
+      <Filter>NetLib</Filter>
+    </ClInclude>
+    <ClInclude Include="NetLib\NetLib_Helper.h">
+      <Filter>NetLib</Filter>
+    </ClInclude>
+    <ClInclude Include="NetLib\NetLib_Server.h">
+      <Filter>NetLib</Filter>
+    </ClInclude>
+    <ClInclude Include="NetLib\NetLibDefine.h">
+      <Filter>NetLib</Filter>
+    </ClInclude>
+    <ClInclude Include="NetLib\NetLibraryProtocol.h">
+      <Filter>NetLib</Filter>
+    </ClInclude>
+    <ClInclude Include="NetLib\Packet.h">
+      <Filter>NetLib</Filter>
+    </ClInclude>
+    <ClInclude Include="NetLib\Session.h">
+      <Filter>NetLib</Filter>
+    </ClInclude>
+    <ClInclude Include="AuthContent.h" />
+    <ClInclude Include="EchoContent.h" />
+    <ClInclude Include="WaitingSession.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="ContentServer.cpp" />
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="Utils\Profiler.cpp">
+      <Filter>Utils</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\RingBuffer.cpp">
+      <Filter>Utils</Filter>
+    </ClCompile>
+    <ClCompile Include="NetLib\NetLib_Client.cpp">
+      <Filter>NetLib</Filter>
+    </ClCompile>
+    <ClCompile Include="NetLib\NetLib_Content.cpp">
+      <Filter>NetLib</Filter>
+    </ClCompile>
+    <ClCompile Include="NetLib\NetLib_Server.cpp">
+      <Filter>NetLib</Filter>
+    </ClCompile>
+    <ClCompile Include="NetLib\Packet.cpp">
+      <Filter>NetLib</Filter>
+    </ClCompile>
+    <ClCompile Include="EchoContent.cpp" />
+    <ClCompile Include="AuthContent.cpp" />
+  </ItemGroup>
+</Project>
