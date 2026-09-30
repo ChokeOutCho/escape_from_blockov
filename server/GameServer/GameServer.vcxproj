@@ -23,6 +23,7 @@
     <ClInclude Include="NetLibBridge.h" />
     <ClInclude Include="GameConfig.h" />
     <ClInclude Include="GameData.h" />
+    <ClInclude Include="ObstacleMap.h" />
     <ClInclude Include="GamePlayer.h" />
     <ClInclude Include="SectorMap.h" />
     <ClInclude Include="EntryContent.h" />
@@ -35,6 +36,7 @@
     <ClCompile Include="EntryContent.cpp" />
     <ClCompile Include="BattleContent.cpp" />
     <ClCompile Include="GameData.cpp" />
+    <ClCompile Include="ObstacleMap.cpp" />
     <ClCompile Include="..\ContentEchoServer\NetLib\NetLib_Server.cpp" />
     <ClCompile Include="..\ContentEchoServer\NetLib\NetLib_Content.cpp" />
     <ClCompile Include="..\ContentEchoServer\NetLib\Packet.cpp" />
