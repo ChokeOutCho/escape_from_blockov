@@ -1,0 +1,10 @@
+{
+  "name": "blockov-gateway",
+  "version": "0.2.0",
+  "private": true,
+  "description": "WebSocket <-> TCP gateway for escape_from_blockov (stage 1). No dependencies, Node.js 18+.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  }
+}
