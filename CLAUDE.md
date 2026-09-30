@@ -15,7 +15,9 @@ WebGL 빌드 2.5D PvP 슈팅 게임(동시 50인) 클라이언트(`client/`)와 
   - Unity 에셋: `AssetDatabase.MoveAssetToTrash(path)`
 
 ## 구성 (2026-09-30)
-- 게임 명세: 프로젝트 문서 `claude/game-spec.md` (v0.8, 이 저장소의 `GAME_SPEC.md`는 사본). 프로토콜 v6
+- 게임 명세: 프로젝트 문서 `claude/game-spec.md` (v0.9, 이 저장소의 `GAME_SPEC.md`는 사본). 프로토콜 v6
+- 조작(v0.9): 카메라 줌 `[` `]`, 마우스 휠은 전체 맵(M) 줌 전용. 섹터 표기는 지도 좌표(`GameSession.SectorLabel`, 열 A~AD / 행 1~30, 위쪽이 1)
+- 더미 강도: `server/DummyClient/dummy_config.txt`의 `weakness_min/max`, `reaction_base_ms`, `aim_error_max_deg` (명세 20.5)
 - 실행: 저장소 최상단 `start_server.bat` [`build`] [`web`] / `stop_server.bat` (명세 18장). 게임 서버·게이트웨이·WebGL 웹서버를 한 번에 실행, `web`은 브라우저 열기
 - 테스트 모드: `server/GameServer/game_config.txt`의 `test_mode: true` → 모든 플레이어를 섹터 (0,0)에 스폰
 - 게임 서버: `server/GameServer/` (README 참고, `GameServer.sln` Release x64). 로직 테스트: `test/` 스텁 + Node 봇
