@@ -1,0 +1,124 @@
+#pragma once
+////////////////////////////////////////////////////////////////////////
+// game_config.txt 로드 (game-spec 9.6). "key": value 형식(JSON 유사), 키 수 제한 없음.
+// 없는 키는 기본값 유지.
+////////////////////////////////////////////////////////////////////////
+#include <string>
+#include <fstream>
+#include <sstream>
+#include <cstdlib>
+#include <cctype>
+
+struct GameConfig
+{
+	// 네트워크 (echo_config.txt와 동일 의미)
+	int port = 10301;
+	int workerThreads = 8;
+	int concurrentThreads = 8;
+	int maxSessions = 1000;
+	int sendBuf = 1000;
+	bool zeroCopy = true;
+
+	// 게임
+	int roomCount = 4;
+	int roomCapacity = 50;
+	int battleTickMs = 33;
+	int entryTickMs = 50;
+	int viewSectorRadius = 1;
+	int enterTimeoutMs = 10000;
+	int heartbeatTimeoutMs = 180000;
+	int deathDisconnectMs = 3000;
+	float moveSpeed = 12.0f;
+	float characterRadius = 0.5f;
+	int maxHp = 100;
+	int maxRewindMs = 500;
+	float hitTolerance = 1.0f;
+	int defaultWeaponId = 1;
+
+	std::string weaponsFile = "weapons.txt";
+	std::string spawnsFile = "spawns.txt";
+	std::string obstacleMapFile = "../../map/obstacles.bmp";
+	int spawnOffsetRadius = 32;
+	float sprintMultiplier = 1.2f;     // Shift 달리기 속도 배율 (클라에 SC_ENTER_GAME으로 전달)
+
+	// 테스트 모드: 모든 플레이어를 한 섹터(test_spawn_sector_x/y, 기본 0,0)에 스폰
+	bool testMode = false;
+	int testSpawnSectorX = 0;
+	int testSpawnSectorY = 0;
+
+	bool Load(const char* path)
+	{
+		std::ifstream f(path);
+		if (!f) return false;
+		std::stringstream ss;
+		ss << f.rdbuf();
+		std::string s = ss.str();
+
+		size_t i = 0;
+		while ((i = s.find('"', i)) != std::string::npos)
+		{
+			size_t e = s.find('"', i + 1);
+			if (e == std::string::npos) break;
+			std::string key = s.substr(i + 1, e - i - 1);
+			size_t c = s.find(':', e);
+			if (c == std::string::npos) break;
+			size_t v = c + 1;
+			while (v < s.size() && isspace((unsigned char)s[v])) v++;
+			std::string val;
+			if (v < s.size() && s[v] == '"')
+			{
+				size_t ve = s.find('"', v + 1);
+				if (ve == std::string::npos) break;
+				val = s.substr(v + 1, ve - v - 1);
+				i = ve + 1;
+			}
+			else
+			{
+				size_t ve = v;
+				while (ve < s.size() && s[ve] != ',' && s[ve] != '}' && s[ve] != '\n' && s[ve] != '\r') ve++;
+				val = s.substr(v, ve - v);
+				while (!val.empty() && isspace((unsigned char)val.back())) val.pop_back();
+				i = ve;
+			}
+			Apply(key, val);
+		}
+		return true;
+	}
+
+private:
+	static bool ToBool(const std::string& v) { return v == "true" || v == "1"; }
+
+	void Apply(const std::string& k, const std::string& v)
+	{
+		int n = atoi(v.c_str());
+		float fl = (float)atof(v.c_str());
+		if (k == "port") port = n;
+		else if (k == "workerTH_Pool_size") workerThreads = n;
+		else if (k == "concurrentTH_size") concurrentThreads = n;
+		else if (k == "maxofsession") maxSessions = n;
+		else if (k == "sendbuf") sendBuf = n;
+		else if (k == "zerocopy") zeroCopy = ToBool(v);
+		else if (k == "room_count") roomCount = n;
+		else if (k == "room_capacity") roomCapacity = n;
+		else if (k == "battle_tick_ms") battleTickMs = n;
+		else if (k == "entry_tick_ms") entryTickMs = n;
+		else if (k == "view_sector_radius") viewSectorRadius = n;
+		else if (k == "enter_timeout_ms") enterTimeoutMs = n;
+		else if (k == "heartbeat_timeout_ms") heartbeatTimeoutMs = n;
+		else if (k == "death_disconnect_ms") deathDisconnectMs = n;
+		else if (k == "move_speed") moveSpeed = fl;
+		else if (k == "character_radius") characterRadius = fl;
+		else if (k == "max_hp") maxHp = n;
+		else if (k == "max_rewind_ms") maxRewindMs = n;
+		else if (k == "hit_tolerance") hitTolerance = fl;
+		else if (k == "default_weapon_id") defaultWeaponId = n;
+		else if (k == "weapons_file") weaponsFile = v;
+		else if (k == "spawns_file") spawnsFile = v;
+		else if (k == "obstacle_map") obstacleMapFile = v;
+		else if (k == "spawn_offset_radius") spawnOffsetRadius = n;
+		else if (k == "sprint_multiplier") sprintMultiplier = fl;
+		else if (k == "test_mode") testMode = ToBool(v);
+		else if (k == "test_spawn_sector_x") testSpawnSectorX = n;
+		else if (k == "test_spawn_sector_y") testSpawnSectorY = n;
+	}
+};
