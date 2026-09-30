@@ -1,4 +1,4 @@
-# escape_from_blockov 게임 명세서 v0.7
+# escape_from_blockov 게임 명세서 v0.8
 
 > 작성일: 2026-09-30
 > 대상: Unity 6000.6.3f1 클라이언트(`client/escape_from_blockov`), NetLib 기반 게임 서버(`server/`), WS↔TCP 게이트웨이(1단계 한정, `server/gateway/`)
@@ -31,7 +31,10 @@
 | 전체 맵 | 클라에서 **M** 키로 전체 맵(미니맵) 토글(3.3) |
 | 카메라 | 2.5D 정사영(피치 55°). 기본 보이는 반경 25, 마우스 휠 15~**200(디버그 상한)**. 릴리스 전 재결정(3장) |
 | 캐릭터 | Capsule, HP만 존재 (확장 예정) |
-| 총 | 기본 총 1종, 탄약 무한. 데이터 구조는 탄창·재장전·확산·다발·관통까지 포함 |
+| 총 | **슬롯 1 특수 총(샷건·저격총, 내구도), 슬롯 2 기본 총(권총, 무한)**, 슬롯 3 붕대(최대 5). 특수 총은 에어드랍·가방에서 획득(19장) |
+| 구르기 | Space: 마우스 방향으로 이동속도×3, 0.25초(약 9m), 쿨타임 3초, 무적 없음(19.3) |
+| 에어드랍 | 서버 시각 5분마다, 방마다 최대 2개, 인원 최다 3×3 섹터 묶음에 투하. 방 전체 공지(19.6) |
+| 가방 | 쓰러진 자리에 1분간. 특수 총·붕대를 F 1초로 열어 획득(19.7) |
 | 사망 | 사망 결과창 → **타이틀 복귀**(연결 종료). 점수는 소멸 |
 | 점수 | 킬 시 **+1 + floor(피해자 점수 × 0.5)**. 동점은 먼저 도달한 사람이 상위 |
 | 랭킹 | 방 내 상위 3명(ID·이름·점수)을 방 전체에 송신, 화면 우상단 출력 |
@@ -178,14 +181,21 @@ flowchart LR
 | SpreadDeg | float | 확산 전체 각도 | 0 |
 | Pellets | BYTE | 1발당 투사체 수 (≤8) | 1 |
 | Pierce | BYTE | 관통 가능 추가 대상 수 | 0 |
+| JitterDeg | float | **흔들림**: 발사마다 조준선에서 ±JitterDeg 무작위 (v0.8) | ✔ |
+| Durability | WORD | 내구도(발사 1회당 1 감소, 0 → 소멸). 0 = 무한 (v0.8) | ✔ |
+| Slot | BYTE | 1 = 특수 총, 2 = 기본 총 (v0.8) | ✔ |
 
 ### 5.2 기본 무기
 
 | WeaponID | 이름 | Damage | Range | Speed | Interval | Radius |
 |---|---|---|---|---|---|---|
-| 1 | Pistol | 20 | 32 | 100 | 250ms | 0.2 |
+| ID | 이름 | 슬롯 | 데미지 | 사거리 | 탄속 | 발사 간격 | 산탄 | 퍼짐(SpreadDeg 전체) | 흔들림(±) | 내구도 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | Pistol | 2 | 20 | 32 | 100 | 250ms | 1 | 0 | 3° | 무한 |
+| 2 | Shotgun | 1 | **20/발** | 25 | 100 | 1000ms | 5 | 10 (산탄마다 ±5° 무작위) | 0 | 80 |
+| 3 | Sniper | 1 | 60 | 45 | 200 | 2000ms | 1 | 0 | 0 | 50 |
 
-→ 5발 처치, 최대 비행 시간 32/100 = 0.32s (2026-10-01 사용자 조정). 벽(검정)에 닿으면 탄이 소멸하고, 낮은 엄폐물(회색)은 통과한다.
+`weapons.txt` 열: `id name damage range speed intervalMs radius magazine reloadMs spreadDeg pellets pierce jitterDeg durability slot` — 흔들림·퍼짐·내구도 모두 이 파일에서 수정 가능. 벽(검정)에 닿으면 탄이 소멸하고, 낮은 엄폐물(회색)은 통과한다.
 
 ---
 
@@ -244,7 +254,7 @@ flowchart LR
 - 시각: `UINT32` **서버 시각(ms)** = 서버 프로세스 시작 기준 경과 ms (`GameProtocol.h`의 `GetServerTimeMs()`, 49일 wrap 허용, 비교는 부호 있는 차이로).
 - PlayerID: UINT32, 방 내 고유, 1부터 증가(0 = 없음). **sessionHandle은 클라에 노출하지 않는다.**
 - 패킷 타입 범위: C→S `3000~3099`, S→C `3100~3199` (`server/GameServer/GameProtocol.h`, 클라 `NetProtocol.cs`). 서버 C++ 상수는 `PT_` 접두사(`PT_SC_MOVE` 등, windows.h 매크로 충돌 회피).
-- 프로토콜 버전: `GAME_PROTOCOL_VERSION = 5` (v3: `SC_ENTER_GAME`에 `MapHash`, v4: `SprintMultiplier`, v5: `SC_PLAYER_COUNT` 추가).
+- 프로토콜 버전: `GAME_PROTOCOL_VERSION = 6` (v3: `SC_ENTER_GAME`에 `MapHash`, v4: `SprintMultiplier`, v5: `SC_PLAYER_COUNT`, v6: 아이템·구르기·컨테이너 — 19.9).
 
 ### 7.2 패킷 목록
 
@@ -257,7 +267,7 @@ flowchart LR
 | 3004 | CS_PING | C→S | – | 6 | **구현** |
 | 3005 | CS_HEARTBEAT | C→S | – | 2 | **구현** |
 | 3100 | SC_ENTER_GAME | S→C | 본인 | **65** | |
-| 3101 | SC_WEAPON_DEFS | S→C | 본인 | 3 + 30n (n≤16) | |
+| 3101 | SC_WEAPON_DEFS | S→C | 본인 | 3 + 36n (n≤14, v6) | |
 | 3102 | SC_CREATE_CHARACTERS | S→C | 본인 / 3×3 | 3 + 54n (n≤9) | |
 | 3103 | SC_DELETE_CHARACTERS | S→C | 본인 / 3×3 | 3 + 4n (n≤127) | |
 | 3104 | SC_MOVE | S→C | 3×3(본인 제외) | 26 | |
@@ -271,6 +281,7 @@ flowchart LR
 | 3112 | SC_KICK | S→C | 본인 | 3 | |
 | 3113 | SC_PONG | S→C | 본인 | 10 | **구현** |
 | 3114 | SC_PLAYER_COUNT | S→C | 방 전체 | 6 | |
+| 3006~3010, 3115~3121 | 아이템·구르기·컨테이너 | | | 19.9 | v6 |
 
 ### 7.3 Client → Server
 
@@ -299,7 +310,8 @@ CS_FIRE (3002)                               // 발사 1회 (Pellets개 투사�
     float   OriginX, OriginZ                 // 발사 위치
     float   DirX, DirZ                       // 사용자가 바라본 방향 (정규화, 확산 적용 전)
     UINT32  ViewTimeMs                       // 발사 순간 화면에 그려진 원격 캐릭터들의 서버 시각 (8.2)
-    UINT16  _reserved                        // 0 (확장: 탄창 잔량 등)
+    BYTE    SpreadSeed                       // v6: 산탄 각도 시드 (서버가 SC_FIRE.SpreadSeed로 그대로 전달, 19.2)
+    BYTE    _reserved                        // 0
 }
 
 CS_HIT_REPORT (3003)                         // 누적 피격 보고
@@ -416,7 +428,7 @@ SC_FIRE (3106)
     BYTE    WeaponID
     float   OriginX, OriginZ
     float   DirX, DirZ
-    BYTE    SpreadSeed         // 관찰자 연출용 확산 시드 (사수 클라와 불일치해도 무방)
+    BYTE    SpreadSeed         // v6: CS_FIRE.SpreadSeed 그대로 (사수와 같은 산탄 각도)
 }
 
 SC_DAMAGE (3107)
@@ -945,7 +957,93 @@ UI는 현재 IMGUI(`UiKit`)로 구현한 1차 버전이다. 한글 표시를 위
 
 ---
 
+## 19. 아이템 · 구르기 · 에어드랍 · 가방 (v0.8)
+
+### 19.1 아이템 슬롯
+
+| 키 | 슬롯 | 내용 |
+|---|---|---|
+| 1 | 특수 총 | 샷건 또는 저격총 1자루(없을 수 있음). 내구도 = 남은 발사 횟수. 0이 되면 사라지고 자동으로 2번으로 전환 |
+| 2 | 기본 총 | 권총(항상 보유, 무한) |
+| 3 | 붕대 | 최대 5개. 입장(스폰)마다 **2개** 지급 |
+
+- 1·2는 들고 있는 총 전환(1은 특수 총이 있을 때만). 서버가 장착 무기를 알고 있고 `CS_FIRE.WeaponID`가 장착 무기와 다르면 거부.
+- 특수 총을 새로 얻으면 기존 특수 총은 **덮어쓴다**(버려짐). 장착 상태는 유지.
+- 하단 가운데에 슬롯 바(무기 이름·내구도·붕대 개수·선택 표시).
+
+### 19.2 조준선 · 흔들림
+- 로컬 캐릭터에서 마우스 지면 위치까지 조준선(본인에게만 보임). 사거리 밖 구간은 흐리게.
+- 발사 방향 = 조준선 방향 + 무작위 흔들림(±`JitterDeg`, 권총 3°, 특수 총 0). 산탄은 발사 방향 기준 각 산탄 ±`SpreadDeg/2` 무작위(샷건 ±5°).
+- 클라는 흔들림 적용 **후** 방향을 `CS_FIRE.Dir`로 보낸다. 산탄 각도는 `CS_FIRE`의 `SpreadSeed`로 결정(관찰자는 같은 시드로 연출).
+- 서버 명중 각도 허용: `SpreadDeg/2 + 3°` (Dir에 흔들림이 이미 포함되므로).
+- 산탄 i(0..Pellets-1) 각도 = `(PelletRand(SpreadSeed, i) - 0.5) × SpreadDeg` (클라 공통 함수, 사수·관찰자 동일). 서버는 산탄 각도를 계산하지 않는다.
+- 사격 토큰 상한 = `clamp(1 + 500 / intervalMs, 1, 3)` (권총 3, 샷건 1.5, 저격총 1.25): 무기 전환 직후 느린 무기의 연속 발사 방지. 장착하지 않은 무기의 `CS_FIRE`는 부정 카운트.
+
+### 19.3 구르기 (Space)
+- 마우스(조준) 방향으로 기본 이동속도×3(12×3 = 36 m/s) **0.25초** → 약 9m. 엄폐물(벽·낮은 엄폐물)에 닿으면 그 앞에서 멈춤(0.25m 단위 검사, 서버·클라 같은 계산).
+- **쿨타임 3초**, 무적 없음, 구르는 동안 사격·붕대 불가(붕대 사용 중이면 취소). HUD의 Space 아이콘에 쿨타임 원형 표시.
+- `CS_ROLL{시작 위치, 방향}` → 서버가 쿨타임·시작 위치(서버 위치와 3m 이내)·방향 검증 후 **도착점을 직접 계산**해 위치로 확정, 위치 이력에 시작(now)·도착(now+250) 기록, 3×3(본인 제외)에 `SC_ROLL`. 구르기 후 첫 `CS_MOVE`가 서버 도착점과 `1m + 구르기 종료 후 경과 시간 × 최고 속도`보다 멀면 `SC_POSITION_CORRECT`(위반 카운트 없음). 구르는 0.25초 동안의 `CS_MOVE`는 무시하되, 끝나기 100ms 이내에 도착한 것은 도착 편차로 보고 받는다.
+
+### 19.4 붕대 (3)
+- 3을 누르면 **2초 사용**(진행 게이지) 후 체력 +50(최대 100). 이동 가능. **사격·구르기·총 전환 시 취소**. 체력이 가득이거나 붕대가 0이면 사용 불가.
+- `CS_USE_BANDAGE` → 서버가 2초 타이머. 완료 시 붕대 -1, `SC_HP`를 3×3에, `SC_INVENTORY`를 본인에게. 취소는 서버가 사격·구르기·전환을 받을 때 자동 처리.
+
+### 19.5 상호작용 (F) 공통
+- 대상 2.5m 이내면 화면에 "**F키를 눌러 열기**". F를 누르는 동안 대상 위에 **원형 게이지**(가방 1초 / 에어드랍 2초). **움직이면(이동 입력) 취소**, F를 떼도 취소.
+- 게이지가 차면 `CS_OPEN_CONTAINER` → 서버 검증: 거리 ≤ 3m, 마지막 이동 이후 경과 ≥ (필요 시간 - 250ms). 통과 시 `SC_CONTAINER_CONTENTS`.
+- 열면 **루팅 창**: 특수 총(이름·내구도)과 붕대(개수) 칸, 각 칸에 [획득] 버튼. 3m 넘게 멀어지면 자동으로 닫힘.
+- `CS_TAKE_ITEM{컨테이너, 1=특수 총 | 3=붕대}`: 특수 총은 덮어쓰기, 붕대는 최대 5개까지만 가져가고 **남은 개수는 컨테이너에 유지**.
+- 여러 명이 동시에 열 수 있고 같은 아이템은 **서버에 먼저 도착한 요청**만 성공. 내용이 바뀌면 그 컨테이너를 열어 둔 모두에게 `SC_CONTAINER_CONTENTS` 갱신.
+
+### 19.6 에어드랍
+- **서버 시각 5분마다**(업타임 5:00, 10:00, …, `airdrop_interval_ms` 300000) 방마다 생성 시도. 방에 이미 **2개**(`airdrop_max`)면 그 회차는 건너뜀. 살아있는 플레이어가 없으면 생성 안 함.
+- 위치: 모든 3×3 섹터 묶음(가운데 섹터 기준) 중 살아있는 인원이 가장 많은 묶음(동점 무작위). 기존 에어드랍 섹터와 체비셰프 거리 3 미만인 묶음은 제외(다른 묶음). 가운데 섹터 안 무작위 빈 자리.
+- 내용물: 특수 총 무작위 1종(최대 내구도) + 붕대 5개. 여는 시간 2초. **비면 즉시 제거**, 그 전에는 계속 유지.
+- 생성 시 방 전체에 `SC_AIRDROP(IsNew=1)` → 화면 상단 공지 "에어드랍 투하! 섹터 (x,y)" 6초. 입장한 플레이어는 기존 에어드랍을 `SC_AIRDROP(IsNew=0)`로 받는다. 에어드랍은 시야와 무관하게 방 전체가 알고, **전체 맵(M)에 정확한 위치** 표시.
+
+### 19.7 가방
+- 플레이어(더미 포함)가 쓰러지면 그 자리에 **항상** 가방 생성: 그 플레이어의 특수 총(남은 내구도)과 붕대 전부. 여는 시간 1초. 생성 후 **1분** 뒤 제거(비어도 1분 유지).
+- 가방은 캐릭터처럼 **섹터 시야(3×3)** 로 보인다: 생성·제거 시 가방 위치의 3×3에 `SC_CONTAINER_CREATE/DELETE`, **플레이어가 섹터를 옮기면 새로 보이게 된/안 보이게 된 가방을 CREATE/DELETE**, 입장 시 시야 안 가방 목록.
+
+### 19.8 HUD
+- **조작법(하단 오른쪽)**: 키보드 키캡(W A S D, Shift, Space, 1 2 3, F, M)과 마우스 그림(왼쪽 버튼 = 사격, 이동 = 조준, 휠 = 줌)으로 표시. 해당 입력이 눌린 동안 그림이 반투명. Space에 구르기 쿨타임 원형 표시.
+- **전체 맵(M)**: 각 섹터에 반투명 숫자로 섹터 번호 `x,y`. **적 표시 제거**(내 위치·카메라 영역·에어드랍만).
+- 에어드랍 공지(상단), 슬롯 바(하단 가운데), 붕대 진행 게이지, 상호작용 문구·원형 게이지, 루팅 창.
+
+### 19.9 프로토콜 v6
+
+| 값 | 이름 | 방향 | 본문 (Type 제외) | 크기 |
+|---|---|---|---|---|
+| 3006 | CS_ROLL | C→S | float StartX, StartZ, DirX, DirZ | 18 |
+| 3007 | CS_SWITCH_WEAPON | C→S | BYTE Slot (1, 2) | 3 |
+| 3008 | CS_USE_BANDAGE | C→S | – | 2 |
+| 3009 | CS_OPEN_CONTAINER | C→S | UINT32 ContainerId | 6 |
+| 3010 | CS_TAKE_ITEM | C→S | UINT32 ContainerId, BYTE Item (1 특수 총, 3 붕대) | 7 |
+| 3115 | SC_INVENTORY | S→C 본인 | BYTE Equipped(1·2), BYTE SpecialWeaponId(0=없음), WORD Durability, BYTE Bandages | 7 |
+| 3116 | SC_ROLL | S→C 3×3(본인 제외) | UINT32 PlayerId, float StartX, StartZ, EndX, EndZ | 22 |
+| 3117 | SC_HP | S→C 3×3 | UINT32 PlayerId, WORD Hp | 8 |
+| 3118 | SC_CONTAINER_CREATE | S→C 3×3 | BYTE Count, {UINT32 Id, BYTE Type(1 가방, 2 에어드랍), float X, Z}[n] | 3 + 13n |
+| 3119 | SC_CONTAINER_DELETE | S→C 3×3·방 | BYTE Count, UINT32 Id[n] | 3 + 4n |
+| 3120 | SC_CONTAINER_CONTENTS | S→C 연 사람 | UINT32 Id, BYTE SpecialWeaponId, WORD Durability, BYTE Bandages | 10 |
+| 3121 | SC_AIRDROP | S→C 방 전체 | UINT32 Id, float X, Z, BYTE SectorX, SectorY, BYTE IsNew | 17 |
+
+- `SC_WEAPON_DEFS` 항목 36B: 기존 필드 + `float JitterDeg, WORD Durability, BYTE Slot, BYTE _reserved[2]` (`_reserved[3]` 대체).
+- 입장 시퀀스: `SC_ENTER_GAME` → `SC_PLAYER_COUNT` → `SC_WEAPON_DEFS` → `SC_INVENTORY` → `SC_CREATE_CHARACTERS` → `SC_CONTAINER_CREATE`(시야 안 가방) → `SC_AIRDROP`(기존, IsNew=0) → `SC_RANKING_TOP3`.
+- 설정(`game_config.txt`): `airdrop_interval_ms`(300000), `airdrop_max`(2), `bag_lifetime_ms`(60000), `start_bandages`(2), `max_bandages`(5), `bandage_heal`(50), `bandage_ms`(2000), `roll_ms`(250), `roll_speed_mult`(3.0), `roll_cooldown_ms`(3000), `interact_range`(2.5), `bag_open_ms`(1000), `airdrop_open_ms`(2000).
+
+### 19.9.1 구현 메모 (v0.8 구현 완료)
+- 서버: `BattleContent`(`HandleRoll/Switch/Bandage/Open/Take`, 가방 섹터별 목록 `m_bagCells`, `TryAirdrop`), 무기표 15열(`jitterDeg durability slot`, 생략 시 0 0 2).
+- 클라: `LocalPlayerController`(1·2·3·Space·조준선·흔들림), `ContainerManager`(가방·에어드랍·F 게이지·루팅 창), `GameHUD`(슬롯 바·조작법·공지·전체 맵 섹터 번호). 구르기·붕대·상호작용 시간과 거리는 서버 설정을 받지 않고 `GameSession` 상수(0.25초/×3/쿨 3초, 붕대 2초, 2.5m·3m, 1초/2초)로 가진다 → 서버 설정을 바꾸면 함께 바꿀 것.
+- 테스트: `server/GameServer/test/item_test.js` + `test/item` 설정(에어드랍 3초, 가방 8초) — 무기표·인벤토리·전환·붕대(취소 포함)·구르기(쿨타임·보정)·가방(생성·열기 조건·획득·만료)·에어드랍(위치 규칙·최대 2·동시 열기·먼저 온 요청·빈 드랍 제거)·특수 총 사격.
+
+### 19.10 더미 클라이언트
+- 붕대 사용·아이템 획득 없음(권총만). **구르기 사용**: 교전 중 쿨타임마다 초당 30% 확률로 적의 옆 방향, 배회 중 쿨타임마다 10% 확률로 진행 방향.
+- 특수 총을 가진 더미(1%)는 **보류**(서버 권한 문제로 추후 결정).
+
+---
+
 ## 변경 이력
+- v0.8 (2026-10-01): 아이템 슬롯(1 특수 총 / 2 권총 / 3 붕대), 샷건·저격총(내구도), 조준선·흔들림(무기표 `jitterDeg`), 구르기(Space, 쿨 3초), 붕대(2초, +50), 에어드랍(5분, 방당 2개, 인원 최다 묶음, 공지·맵 표시), 가방(사망 위치, 1분, 섹터 시야), F 상호작용(원형 게이지·루팅 창), 조작법 HUD, 전체 맵 섹터 번호·적 표시 제거. 프로토콜 v6 (19장).
 - v0.7 (2026-10-01): **방 정원 300**(`maxofsession` 1500), **섹터 50m · 30×30 (월드 1500m)**, 스폰 49개(7×7), 예시 맵 1500×1500 재생성, 무기 사거리 상한 50(사용자 무기: 사거리 32·탄속 100), `spawn_offset_radius` 20. 프로토콜 v5: **`SC_PLAYER_COUNT`(3114)** — 서버 전체 접속 인원을 입장·해제 시 방송, 클라 화면 상단 "접속 N명". 더미 클라이언트 비정상 이벤트 로그 파일.
 - v0.6.1 (2026-09-30): 더미 클라이언트(`server/DummyClient`, 18.5)와 대규모 테스트 서버 설정(`test/stress`) 추가. 서버 `ObstacleMap`을 `ObstacleMap.h/.cpp`로 분리(동작 변화 없음).
 - v0.6 (2026-09-30): **Shift 달리기**(×`sprint_multiplier` 1.2, 서버 속도·이동 예산 검증을 달리기 최고 속도 기준으로), 프로토콜 v4(`SC_ENTER_GAME.SprintMultiplier`, 65B), **테스트 모드**(`test_mode` → 모든 플레이어를 섹터 (0,0)에 스폰), `start_server.bat`이 WebGL 웹서버까지 한 번에 실행(`web`은 브라우저 열기만), WebGL에서 캐릭터·총·탄이 **분홍색**으로 나오던 문제 수정(`CreatePrimitive` 기본 머티리얼 → `RuntimeMaterials` URP Lit 에셋).
