@@ -6,14 +6,14 @@ using UnityEngine;
 namespace Blockov.Game
 {
     /// <summary>
-    /// 런타임 엄폐물 격자 (1m x 1m, 6400 x 6400). 에디터 도구(Blockov/Map/Obstacle Map Importer)가
+    /// 런타임 엄폐물 격자 (1m x 1m, 1500 x 1500 = 섹터 50m x 30). 에디터 도구(Blockov/Map/Obstacle Map Importer)가
     /// map/obstacles.bmp에서 만든 Resources/Map/obstacle_map.bytes(병합된 사각형 목록)를 읽어 비트셋으로 복원한다.
     ///  - Wall: 이동·총알 차단,  Low: 이동만 차단(총알 통과)
     /// 서버 GameServer/GameData.cpp의 ObstacleMap과 같은 규칙·같은 해시(FNV-1a)를 사용한다.
     /// </summary>
     public static class ObstacleMap
     {
-        public const int Size = 6400;
+        public const int Size = SectorGrid.DefaultSectorSize * SectorGrid.DefaultSectorCount;   // 1500
         public const byte Empty = 0, Low = 1, Wall = 2;
         public const string ResourcePath = "Map/obstacle_map";
 
@@ -150,7 +150,7 @@ namespace Blockov.Game
             var low = new Color32(170, 150, 110, 255);
             var wall = new Color32(20, 22, 26, 255);
             float scale = (float)px / Size;
-            int gridEvery = Mathf.Max(1, Mathf.RoundToInt(640 * scale));   // 10섹터(640m)마다 격자선
+            int gridEvery = Mathf.Max(1, Mathf.RoundToInt(SectorGrid.DefaultSectorSize * 5 * scale));   // 5섹터(250m)마다 격자선
             for (int y = 0; y < px; y++)
                 for (int x = 0; x < px; x++)
                     cols[y * px + x] = (x % gridEvery == 0 || y % gridEvery == 0) ? gridLine : ground;

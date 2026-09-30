@@ -24,6 +24,7 @@ namespace Blockov.Game
             DrawTop3();
             DrawStatus();
             DrawHitMarker();
+            DrawOnlineCount();
             DrawMapWarning();
             if (_gc.ShowMinimap) DrawMinimap(cam);
             if (_gc.ShowDeathResult) DrawDeathResult();
@@ -134,6 +135,16 @@ namespace Blockov.Game
             UiKit.Rect(new Rect(x - th / 2, y - s, th, s * 2), c);
             GUI.matrix = m;
 #endif
+        }
+
+        /// <summary>화면 상단 가운데: 서버 전체 접속 인원</summary>
+        void DrawOnlineCount()
+        {
+            if (GameSession.OnlineCount <= 0) return;
+            float w = UiKit.Px(180), h = UiKit.Px(34);
+            var r = new Rect((Screen.width - w) * 0.5f, UiKit.Px(12), w, h);
+            UiKit.Panel(r);
+            UiKit.ShadowLabel(r, $"접속 {GameSession.OnlineCount:N0}명", UiKit.Sized(UiKit.LabelCenter, 18), new Color(0.75f, 0.95f, 0.8f));
         }
 
         void DrawMapWarning()

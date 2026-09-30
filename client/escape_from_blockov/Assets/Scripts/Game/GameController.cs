@@ -155,6 +155,7 @@ namespace Blockov.Game
                     GameSession.Kills = r.ReadUInt16();
                     break;
                 case PacketType.SC_RANKING_TOP3: OnRanking(r); break;
+                case PacketType.SC_PLAYER_COUNT: GameSession.OnlineCount = (int)r.ReadUInt32(); break;
                 case PacketType.SC_KICK:
                     // NetworkManager가 사유를 LastError에 기록. 곧 서버가 끊는다.
                     break;

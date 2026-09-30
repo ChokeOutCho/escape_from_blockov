@@ -126,7 +126,9 @@ namespace Blockov.Game
             if (blockedZ) _vel.y = 0;
         }
 
-        static Vector2 Clamp(Vector2 p) => new Vector2(Mathf.Clamp(p.x, 2f, 6398f), Mathf.Clamp(p.y, 2f, 6398f));
+        // 이동 가능 영역: 외벽 두께 2 → [2, 월드 크기 - 2] (서버 MapConst::MinPos/MaxPos)
+        const float MinPos = 2f, MaxPos = ObstacleMap.Size - 2f;
+        static Vector2 Clamp(Vector2 p) => new Vector2(Mathf.Clamp(p.x, MinPos, MaxPos), Mathf.Clamp(p.y, MinPos, MaxPos));
 
         void SendMoveIfNeeded()
         {

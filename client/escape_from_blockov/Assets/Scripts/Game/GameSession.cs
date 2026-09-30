@@ -55,6 +55,8 @@ namespace Blockov.Game
         public static uint MapHash;
         /// <summary>Shift 달리기 속도 배율 (서버 설정 sprint_multiplier)</summary>
         public static float SprintMultiplier = 1.2f;
+        /// <summary>서버 전체 접속 인원 (SC_PLAYER_COUNT, 입장·퇴장 시 서버가 방송)</summary>
+        public static int OnlineCount;
 
         public static uint Score;
         public static uint Kills;
@@ -91,6 +93,7 @@ namespace Blockov.Game
 
             Score = 0;
             Kills = 0;
+            OnlineCount = 0;
             Death = null;
             Weapons.Clear();
             Top3.Clear();

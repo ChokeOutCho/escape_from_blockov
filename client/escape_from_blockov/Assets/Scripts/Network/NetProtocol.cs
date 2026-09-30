@@ -11,7 +11,7 @@ namespace Blockov.Net
         public const int HeaderSize = 5;
         public const int MaxPayload = 512;    // 서버 PAYLOAD_LEN_DEFAULT
 
-        public const uint ProtocolVersion = 4;   // v3: SC_ENTER_GAME에 MapHash, v4: SprintMultiplier
+        public const uint ProtocolVersion = 5;   // v3: SC_ENTER_GAME에 MapHash, v4: SprintMultiplier, v5: SC_PLAYER_COUNT
         public const int NameLength = 12;     // WCHAR Name[12]
         public const int MaxHitItems = 29;    // CS_HIT_REPORT (3 + 17n <= 512)
     }
@@ -42,6 +42,7 @@ namespace Blockov.Net
         SC_RANKING_TOP3 = 3111,
         SC_KICK = 3112,
         SC_PONG = 3113,
+        SC_PLAYER_COUNT = 3114,     // UINT32 TotalPlayers (서버 전체 접속 인원, 접속·해제 시 방송)
     }
 
     public enum EnterResult : byte

@@ -6,8 +6,8 @@ using UnityEngine;
 /// </summary>
 public class SectorGrid : MonoBehaviour
 {
-    public const int DefaultSectorSize = 64;
-    public const int DefaultSectorCount = 100;
+    public const int DefaultSectorSize = 50;
+    public const int DefaultSectorCount = 30;
 
     [Tooltip("섹터 한 변 길이 (유닛)")]
     public int sectorSize = DefaultSectorSize;
