@@ -1,4 +1,4 @@
-# escape_from_blockov 게임 명세서 v0.6.1
+# escape_from_blockov 게임 명세서 v0.7
 
 > 작성일: 2026-09-30
 > 대상: Unity 6000.6.3f1 클라이언트(`client/escape_from_blockov`), NetLib 기반 게임 서버(`server/`), WS↔TCP 게이트웨이(1단계 한정, `server/gateway/`)
@@ -13,7 +13,7 @@
 |---|---|
 | 장르/플랫폼 | 2.5D 탑다운 PvP 슈팅, Unity WebGL |
 | 진입 흐름 | 로비 없음. 타이틀에서 이름 입력 → 즉시 방 배정 → 전투 |
-| 방 구성 | **다중 방, 자동 배정**. 방 = `BattleContent` 인스턴스. 정원 `room_capacity` 기본 50, **100명 이상 확장 고려**(15장) |
+| 방 구성 | **다중 방, 자동 배정**. 방 = `BattleContent` 인스턴스. 정원 `room_capacity` 기본 **300**(방 4개 → 1,200명) |
 | 전송 | **WebSocket 단일**. 에디터/Standalone 포함 모든 클라가 WebSocket 사용 |
 | 서버 연결 | 1단계: WS → **게이트웨이** → TCP → NetLib. 2단계: **NetLib에 WebSocket 탑재** 후 게이트웨이 제거(13장) |
 | 클라 통신 모듈 | WebSocket 백엔드 2종(WebGL=jslib / Editor·Standalone=`ClientWebSocket`) + 공통 처리(NetHeader 파싱·수신 큐·메인 스레드 디스패치) |
@@ -21,11 +21,12 @@
 | 암호화 | **사용하지 않음**. 서버 생성자에 `opt_encryption = nullptr`. 헤더 Code(119)만 검사. wss(TLS)로 전송 구간 보호 |
 | 하트비트 | 서버 타임아웃 **3분**. 클라는 60초마다 `CS_HEARTBEAT` (백그라운드 탭에서도 동작하는 타이머) |
 | 레이턴시 | 지연은 일단 감안. `CS_PING`/`SC_PONG`으로 RTT를 측정해 **클라 화면에 표시** (구현 완료) |
-| 이동 | **클라 권위 + 서버 검증** (속도·맵 경계·엄폐물). 위반 시 위치 보정. **Shift 달리기** = 이동 속도 × `sprint_multiplier`(1.2) |
+| 이동 | **클라 권위 + 서버 검증** (속도·맵 경계·엄폐물). 위반 시 위치 보정. **Shift 달리기** = 이동 속도 × `sprint_multiplier`(현재 설정 1.5) |
+| 접속 인원 | 화면 상단 가운데 "접속 N명" = 서버 전체(모든 방) 접속 인원. 입장·연결 해제 시 서버가 `SC_PLAYER_COUNT` 방송 |
 | 테스트 모드 | `game_config.txt`의 `test_mode: true` → 모든 플레이어를 한 섹터(기본 (0,0))에 스폰 |
 | 피격 | **오토타게팅**: 사수 클라가 판정 → 모아서 보고 → 서버가 **발사 시각 기준 과거 위치로 되감아** 검증 |
 | 발사 정보 | 조준 **방향 벡터 + 타임스탬프(추정 서버 시각)** 전송. 시각 동기화용 Ping/Pong |
-| 시야 | 기준 섹터 + 인접 8섹터(3×3, **섹터 64m**). 브로드캐스트도 3×3 한정 (랭킹만 방 전체). 한 방향 최소 보장 64 → **무기 사거리 64** |
+| 시야 | 기준 섹터 + 인접 8섹터(3×3, **섹터 50m**). 브로드캐스트도 3×3 한정 (랭킹·접속 인원만 방 전체). 한 방향 최소 보장 50 → **무기 사거리 ≤ 50** |
 | 엄폐물 | **BMP 이미지 1픽셀 = 1m×1m**. 검정 = 벽(이동·총알 차단), 회색 = 낮은 엄폐물(이동만 차단, 총알 통과). 서버·클라가 같은 BMP를 읽고 해시로 일치 확인(3.2) |
 | 전체 맵 | 클라에서 **M** 키로 전체 맵(미니맵) 토글(3.3) |
 | 카메라 | 2.5D 정사영(피치 55°). 기본 보이는 반경 25, 마우스 휠 15~**200(디버그 상한)**. 릴리스 전 재결정(3장) |
@@ -43,7 +44,7 @@
 
 - **목표**: 적을 처치해 점수를 쌓고 방 내 상위 3위 안에 드는 것. 죽으면 점수를 잃고 처음부터 다시 시작한다(slither.io식 긴장감).
 - **한 판의 흐름**: 접속 → 스폰 → 탐색·이동/사격 → (처치 시 점수 흡수) → 사망 → 결과창 → 타이틀.
-- **맵 성격**: 6400×6400의 넓은 맵에 소수가 흩어져 있어 조우가 드물다. 조우 자체가 긴장 요소다.
+- **맵 성격**: 1500×1500 맵에 소수가 흩어져 있어 조우가 드물다. 조우 자체가 긴장 요소다.
 - **영속성 없음**: 계정·DB·저장 없음. 서버 재시작 시 모든 상태 초기화.
 
 ---
@@ -88,31 +89,31 @@ flowchart LR
 |---|---|
 | 씬 | `Assets/Scenes/TestArena.unity` (빌드 인덱스 1) |
 | 단위 | 1 unit = 1 m. 평면은 X-Z, Y는 높이(게임 로직은 2D X-Z만 사용) |
-| 섹터 | **64×64, 100×100개**, 월드 6400×6400. 원점 = 섹터(0,0) 좌하단 |
-| 섹터 계산 | `sx = floor(x/64)`, `sy = floor(z/64)`, 인덱스 `sy*100+sx` (클라 `SectorGrid.cs`, 서버 `MapConst`/`SectorMap.h`) |
-| 이동 가능 영역 | 외벽 두께 2 → `x, z ∈ [2.0, 6398.0]` (서버 클램프 기준) |
-| 바닥 | 섹터 체커 무늬 쿼드 1장(`Ground`, 텍스처 100×100 1텍셀=1섹터). 메뉴 `Blockov/Map/Rebuild Sector Ground` |
-| 스폰 | 50개(`Spawn_NN_Sxx_yy`, 64m 섹터 좌표). 메뉴 `Blockov/Map/Export spawns.txt`로 `spawns.txt`(한 줄 `sx sy`)를 추출해 서버가 로드 |
+| 섹터 | **50×50, 30×30개**, 월드 1500×1500. 원점 = 섹터(0,0) 좌하단 |
+| 섹터 계산 | `sx = floor(x/50)`, `sy = floor(z/50)`, 인덱스 `sy*30+sx` (클라 `SectorGrid.cs`, 서버 `MapConst`/`SectorMap.h`) |
+| 이동 가능 영역 | 외벽 두께 2 → `x, z ∈ [2.0, 1498.0]` (서버 클램프 기준) |
+| 바닥 | 섹터 체커 무늬 쿼드 1장(`Ground`, 텍스처 30×30 1텍셀=1섹터). 메뉴 `Blockov/Map/Rebuild Sector Ground` |
+| 스폰 | **49개**(7×7 격자, 섹터 2·6·10·…·26 = 200m 간격, `Spawn_NN_Sxx_yy`). 메뉴 `Blockov/Map/Export spawns.txt`로 `spawns.txt`(한 줄 `sx sy`)를 추출해 서버가 로드 |
 | 엄폐물 | `map/obstacles.bmp` (3.2). 서버가 이동·총알 차단을 검증한다 |
 
-**테스트 모드**(`test_mode: true`): 위 규칙 대신 섹터 (`test_spawn_sector_x`, `test_spawn_sector_y`)(기본 (0,0), 월드 0~64m) 안의 무작위 위치(경계에서 반지름+4m 안쪽)에 스폰하고, 엄폐물과 겹치면 가까운 빈 칸으로 옮긴다. 서버 시작 로그와 대시보드에 `[TEST MODE]`가 표시된다.
+**테스트 모드**(`test_mode: true`): 위 규칙 대신 섹터 (`test_spawn_sector_x`, `test_spawn_sector_y`)(기본 (0,0), 월드 0~50m) 안의 무작위 위치(경계에서 반지름+4m 안쪽)에 스폰하고, 엄폐물과 겹치면 가까운 빈 칸으로 옮긴다. 서버 시작 로그와 대시보드에 `[TEST MODE]`가 표시된다.
 
-**스폰 선택 규칙(서버)**: 스폰 섹터의 3×3 안에 살아있는 플레이어가 0명인 스폰 중 무작위 → 없으면 3×3 인원이 가장 적은 스폰. 같은 스폰을 여러 명이 쓰면 섹터 중심에서 반경 `spawn_offset_radius`(32) 내 무작위 오프셋. 선택 지점이 엄폐물과 겹치면 가장 가까운 빈 칸으로 옮긴다(`ObstacleMap::FindFree`).
+**스폰 선택 규칙(서버)**: 스폰 섹터의 3×3 안에 살아있는 플레이어가 0명인 스폰 중 무작위 → 없으면 3×3 인원이 가장 적은 스폰. 같은 스폰을 여러 명이 쓰면 섹터 중심에서 반경 `spawn_offset_radius`(20) 내 무작위 오프셋. 선택 지점이 엄폐물과 겹치면 가장 가까운 빈 칸으로 옮긴다(`ObstacleMap::FindFree`).
 
 ### 3.1 시야와 카메라
 
-- 서버 시야(3×3 섹터)는 플레이어가 섹터 경계에 있을 때 한 방향으로 **최소 64만 보장**한다.
+- 서버 시야(3×3 섹터)는 플레이어가 섹터 경계에 있을 때 한 방향으로 **최소 50만 보장**한다.
 - **카메라 보이는 반경 `CameraViewHalfExtent` = 200 (디버그 설정)**. 클라 설정값으로 둔다.
-  - 64~200 구간은 서버가 정보를 주지 않을 수 있어, 적이 화면 안에서 갑자기 나타나거나 사라질 수 있다(디버그 중 허용).
-  - 릴리스 전 결정: (a) 카메라를 64 이내로 줄이거나, (b) 서버 시야를 5×5(`view_sector_radius=2`, 보장 128)로 넓힌다.
-- 무기 사거리는 **≤ 64**(= 섹터 크기 × `view_sector_radius`) 유지(안 보이는 적을 맞추는 일 방지). 서버가 무기 테이블 로드 시 초과값을 이 값으로 잘라낸다.
+  - 50~200 구간은 서버가 정보를 주지 않을 수 있어, 적이 화면 안에서 갑자기 나타나거나 사라질 수 있다(디버그 중 허용).
+  - 릴리스 전 결정: (a) 카메라를 50 이내로 줄이거나, (b) 서버 시야를 5×5(`view_sector_radius=2`, 보장 100)로 넓힌다.
+- 무기 사거리는 **≤ 50**(= 섹터 크기 × `view_sector_radius`) 유지(안 보이는 적을 맞추는 일 방지). 서버가 무기 테이블 로드 시 초과값을 이 값으로 잘라낸다.
 
 ### 3.2 엄폐물 맵 (BMP)
 
 | 항목 | 규칙 |
 |---|---|
 | 파일 | `map/obstacles.bmp` (저장소 최상단 `map/`). 서버 설정 `obstacle_map`, 클라는 임포트 도구로 반영 |
-| 크기 | **6400×6400 픽셀**, 1픽셀 = 월드 1m×1m 칸. 크기가 다르면 있는 부분만 읽고 나머지는 빈 칸 |
+| 크기 | **1500×1500 픽셀**, 1픽셀 = 월드 1m×1m 칸. 크기가 다르면 있는 부분만 읽고 나머지는 빈 칸 |
 | 좌표 | 이미지 **왼쪽 아래 = 월드 (0,0)**, 오른쪽 = +X, **위쪽 = +Z**. 픽셀 (px, py_위에서부터) → 칸 `x = px`, `z = 6399 - py` |
 | 형식 | 무압축 BMP 1/4/8/24/32비트 (그림판 기본 저장 형식 모두 가능) |
 | 색 판정 | 밝기 `L = (299R + 587G + 114B) / 1000` |
@@ -120,11 +121,11 @@ flowchart LR
 | **낮은 엄폐물** (Low) | `64 ≤ L < 224` (회색) → 이동 차단, 총알 **통과** |
 | 빈 칸 | `L ≥ 224` (흰색) |
 | 맵 밖 | 벽으로 취급 |
-| 해시 | 6400×6400 칸 값(0/1/2)을 z 오름차순·x 오름차순으로 FNV-1a 32bit. 서버는 `SC_ENTER_GAME.MapHash`로 전달, 클라는 임포트 시 계산한 값과 비교해 다르면 화면 상단에 경고 |
+| 해시 | 1500×1500 칸 값(0/1/2)을 z 오름차순·x 오름차순으로 FNV-1a 32bit. 서버는 `SC_ENTER_GAME.MapHash`로 전달, 클라는 임포트 시 계산한 값과 비교해 다르면 화면 상단에 경고 |
 
 **그림판으로 편집하기**
 1. `map/obstacles.bmp`를 그림판으로 연다(20MB, 4비트 16색).
-2. 검정(벽)·회색(낮은 엄폐물, 기본 팔레트의 회색 두 가지 모두 해당)·흰색(지우기)으로 그린다. 확대(Ctrl+휠)해서 1픽셀 단위 편집 가능. 캐릭터 지름은 1m이므로 통로는 2픽셀 이상으로 둔다.
+2. (파일 약 1.1MB, 4비트 16색) 검정(벽)·회색(낮은 엄폐물, 기본 팔레트의 회색 두 가지 모두 해당)·흰색(지우기)으로 그린다. 확대(Ctrl+휠)해서 1픽셀 단위 편집 가능. 캐릭터 지름은 1m이므로 통로는 2픽셀 이상으로 둔다.
 3. **다른 이름으로 저장 → BMP 그림**(16색 또는 24비트). PNG/JPG로 저장하면 읽지 못한다.
 4. 서버: 재시작하면 반영(`start_server.bat`). 시작 로그와 대시보드 `[Map]` 줄에서 벽/낮은 칸 수와 해시를 확인.
 5. 클라: Unity 메뉴 **`Blockov/Map/Import Obstacles (default BMP)`** 실행(또는 `Blockov/Map/Obstacle Map Importer...` 창에서 다른 BMP 선택) → TestArena 씬의 `Obstacles` 루트와 `Resources/Map/obstacle_map.bytes`가 갱신되고 씬이 저장된다. 이후 WebGL 재빌드.
@@ -134,11 +135,11 @@ flowchart LR
 - BMP → 칸 배열 → 같은 종류의 칸을 **최대 직사각형으로 병합**(그리디) → `Resources/Map/obstacle_map.bytes`(`"BKOM"`, 버전, 크기, 해시, 사각형 목록 `{type u8, x/z/w/h u16}`) 저장.
 - 256m 청크 단위로 합친 메시를 `Assets/Map/Generated/ObstacleChunks.asset`에 만들고 씬 `Obstacles` 아래에 청크 오브젝트로 배치(기본 벽 높이 2.5m, 낮은 엄폐물 0.9m — 임포터 창에서 변경, 재질 `M_Obstacle_Wall`/`M_Obstacle_Low`). 이전 생성물은 휴지통으로 이동.
 - 런타임(`ObstacleMap.cs`)은 `obstacle_map.bytes`를 읽어 이동·총알 비트셋을 만든다(충돌·미니맵용, 씬 메시와 독립).
-- 예시 맵: `map/generate_example_map.py`(numpy, 시드 고정)로 생성. 벽 287,314칸 / 낮은 엄폐물 140,899칸, 스폰 주변 반경 16 비움, 해시 `0x39F804AE`.
+- 예시 맵: `map/generate_example_map.py`(numpy, 시드 고정)로 생성. 1500×1500, 벽 26,407칸 / 낮은 엄폐물 11,765칸, 스폰 주변 반경 16 비움, 해시 `0xBCCE0A3A`. (4비트 BMP 한 행은 4바이트 정렬: 1500px → 752B)
 
 ### 3.3 전체 맵 (미니맵)
 
-- 전투 중 **M** 키로 토글. 화면 중앙에 전체 6400×6400 맵을 800px 텍스처로 표시(벽 짙은 색·낮은 엄폐물 갈색·10섹터(640m)마다 격자선).
+- 전투 중 **M** 키로 토글. 화면 중앙에 전체 1500×1500 맵을 800px 텍스처로 표시(벽 짙은 색·낮은 엄폐물 갈색·5섹터(250m)마다 격자선).
 - 표시: 내 위치(파란 점 + 조준 방향), 시야 안의 다른 플레이어(빨간 점), 현재 카메라 영역(흰 사각형).
 - 텍스처는 `ObstacleMap.BuildMinimap`으로 최초 1회 생성해 재사용.
 
@@ -168,7 +169,7 @@ flowchart LR
 |---|---|---|---|
 | WeaponID | BYTE | 1~255 | ✔ |
 | Damage | WORD | 1발(펠릿) 데미지 | ✔ |
-| Range | float | 사거리(≤64) | ✔ |
+| Range | float | 사거리(≤50) | ✔ |
 | ProjectileSpeed | float | 탄속 u/s | ✔ |
 | FireIntervalMs | WORD | 연사 간격 | ✔ |
 | ProjectileRadius | float | 탄 반지름 | ✔ |
@@ -182,9 +183,9 @@ flowchart LR
 
 | WeaponID | 이름 | Damage | Range | Speed | Interval | Radius |
 |---|---|---|---|---|---|---|
-| 1 | Pistol | 20 | 64 | 60 | 250ms | 0.2 |
+| 1 | Pistol | 20 | 32 | 100 | 250ms | 0.2 |
 
-→ 5발 처치, 최대 비행 시간 64/60 ≈ 1.07s. 벽(검정)에 닿으면 탄이 소멸하고, 낮은 엄폐물(회색)은 통과한다.
+→ 5발 처치, 최대 비행 시간 32/100 = 0.32s (2026-10-01 사용자 조정). 벽(검정)에 닿으면 탄이 소멸하고, 낮은 엄폐물(회색)은 통과한다.
 
 ---
 
@@ -192,7 +193,7 @@ flowchart LR
 
 ### 6.1 입장
 1. 타이틀에서 이름 입력 → WebSocket 접속 → `CS_ENTER_GAME`.
-2. 서버가 방 배정 후 `SC_ENTER_GAME` → `SC_WEAPON_DEFS` → `SC_CREATE_CHARACTERS`(시야 내 기존 플레이어) → `SC_RANKING_TOP3` 순으로 송신.
+2. 서버가 방 배정 후 `SC_ENTER_GAME` → `SC_PLAYER_COUNT` → `SC_WEAPON_DEFS` → `SC_CREATE_CHARACTERS`(시야 내 기존 플레이어) → `SC_RANKING_TOP3` 순으로 송신.
 3. 주변(3×3) 플레이어에게 `SC_CREATE_CHARACTERS`(신규 1명).
 4. 클라는 입장 직후 `CS_PING`을 연속 3회(200ms 간격) 보내 시각 동기화를 빠르게 수렴시키고, `CS_HEARTBEAT` 60초 타이머를 시작한다(8.2).
 
@@ -243,7 +244,7 @@ flowchart LR
 - 시각: `UINT32` **서버 시각(ms)** = 서버 프로세스 시작 기준 경과 ms (`GameProtocol.h`의 `GetServerTimeMs()`, 49일 wrap 허용, 비교는 부호 있는 차이로).
 - PlayerID: UINT32, 방 내 고유, 1부터 증가(0 = 없음). **sessionHandle은 클라에 노출하지 않는다.**
 - 패킷 타입 범위: C→S `3000~3099`, S→C `3100~3199` (`server/GameServer/GameProtocol.h`, 클라 `NetProtocol.cs`). 서버 C++ 상수는 `PT_` 접두사(`PT_SC_MOVE` 등, windows.h 매크로 충돌 회피).
-- 프로토콜 버전: `GAME_PROTOCOL_VERSION = 4` (v3: `SC_ENTER_GAME`에 `MapHash`, v4: `SprintMultiplier` 추가).
+- 프로토콜 버전: `GAME_PROTOCOL_VERSION = 5` (v3: `SC_ENTER_GAME`에 `MapHash`, v4: `SprintMultiplier`, v5: `SC_PLAYER_COUNT` 추가).
 
 ### 7.2 패킷 목록
 
@@ -269,6 +270,7 @@ flowchart LR
 | 3111 | SC_RANKING_TOP3 | S→C | 방 전체 | 3 + 33n (n≤3) | |
 | 3112 | SC_KICK | S→C | 본인 | 3 | |
 | 3113 | SC_PONG | S→C | 본인 | 10 | **구현** |
+| 3114 | SC_PLAYER_COUNT | S→C | 방 전체 | 6 | |
 
 ### 7.3 Client → Server
 
@@ -474,6 +476,12 @@ SC_PONG (3113)
     UINT32  ClientTimeMs       // CS_PING 값 그대로
     UINT32  ServerTimeMs       // 서버가 응답을 만든 시각
 }
+
+SC_PLAYER_COUNT (3114)         // 서버 전체 접속 인원 (모든 방 합계)
+{                              // 입장 시퀀스에서 본인에게 1회 + 이후 인원이 바뀌면 각 방이 방 전체에 방송
+    WORD    Type               // (방 틱마다 검사, 최소 200ms 간격으로 병합 → 대량 접속 시 폭주 방지)
+    UINT32  TotalPlayers       // 방에 입장한 플레이어 수 (입장 대기·연결 중 제외, 사망 후 끊기기 전까지는 포함)
+}
 ```
 
 ### 7.5 시퀀스
@@ -536,7 +544,7 @@ sequenceDiagram
 | `BattleContent` | `NetLib_Content` (tick 33ms) | 방 1개. 플레이어·섹터·랭킹·전투 판정 전부 소유 |
 | `GamePlayer` | – | TLS 풀 객체. 생성 시 sessionHandle 필수 인자. 위치 이력·사격 기록 링 보유 |
 | `PositionHistory` | – | 고정 링버퍼 64개 `{timeMs, x, z, vx, vz}`, `PosAt(t)` 제공(9.5) |
-| `SectorMap` | – | 섹터 100×100(64m)별 플레이어 목록, 3×3 조회·diff |
+| `SectorMap` | – | 섹터 30×30(50m)별 플레이어 목록, 3×3 조회·diff |
 | `ObstacleMap` | – | (`ObstacleMap.h/.cpp`, NetLib 의존 없음 — DummyClient도 함께 컴파일) BMP 로드(`LoadBmp`), 칸 조회, `CircleBlocked`(캐릭터 원), `SegmentBlocked`(DDA 선분, 이동/총알 모드), `FindFree`, `Hash`. 불변 전역, 모든 Content가 락 없이 읽음 |
 | `WeaponTable` | – | `weapons.txt` 로드, 불변(read-only) 전역. 모든 Content가 락 없이 읽음 |
 
@@ -602,7 +610,7 @@ sequenceDiagram
 | 키 | 기본값 |
 |---|---|
 | room_count | 4 |
-| room_capacity | 50 (100+ 대비) |
+| room_capacity | 300 |
 | battle_tick_ms | 33 |
 | view_sector_radius | 1 |
 | enter_timeout_ms | 10000 |
@@ -616,8 +624,8 @@ sequenceDiagram
 | default_weapon_id | 1 |
 | weapons_file / spawns_file | weapons.txt / spawns.txt |
 | obstacle_map | `../../map/obstacles.bmp` (실행 디렉터리 `server/GameServer` 기준). 없으면 경고 후 엄폐물 없이 실행 |
-| spawn_offset_radius | 32 |
-| sprint_multiplier | 1.2 (달리기 속도 배율, 클라에 전달) |
+| spawn_offset_radius | 20 |
+| sprint_multiplier | 1.2 기본 / 현재 설정 1.5 (달리기 속도 배율, 클라에 전달) |
 | test_mode | false (true면 모든 플레이어를 아래 섹터에 스폰) |
 | test_spawn_sector_x / test_spawn_sector_y | 0 / 0 |
 
@@ -628,7 +636,7 @@ sequenceDiagram
 ### 10.1 이동 검증 (CS_MOVE)
 
 - **이동 예산(토큰 버킷)**: 최고 속도 `MaxSpeed = MoveSpeed × sprint_multiplier`(달리기 포함). 매 틱 `budget += MaxSpeed × dt × 1.2`, 상한 `MaxSpeed × 1.0s`. CS_MOVE마다 `d = |new - cur|`; `d ≤ budget + 0.5`면 통과 후 `budget -= d`. TCP/WS 뭉침(여러 패킷 동시 도착)을 허용하면서 평균 속도를 제한한다.
-- 좌표 NaN/Inf, 맵 밖(`[2, 6398]` 초과) → 클램프 후 보정 전송.
+- 좌표 NaN/Inf, 맵 밖(`[2, 1498]` 초과) → 클램프 후 보정 전송.
 - **엄폐물**: 이전 위치→새 위치 선분이 벽·낮은 엄폐물 칸을 지나거나(`SegmentBlocked`, 이동 모드), 새 위치의 원(반지름 `CharacterRadius - 0.1`)이 막힌 칸과 겹치면(`CircleBlocked`) 거부 → 보정. 클라는 반지름 그대로 막으므로(11.2) 정상 이동에서는 보정이 나지 않는다.
 - 보고 속도 `|Vel| ≤ MoveSpeed × sprint_multiplier × 1.1`, AimAngle 유한값.
 - 실패 시 서버 위치 유지 + `SC_POSITION_CORRECT`. 5초 안에 10회 이상 → `SC_KICK(CHEAT_SUSPECT)`.
@@ -811,7 +819,7 @@ UI는 현재 IMGUI(`UiKit`)로 구현한 1차 버전이다. 한글 표시를 위
 | SC_CREATE_CHARACTERS | 9명 단위 분할 | 자동 대응 |
 | 패킷 Count 필드 | BYTE(패킷당 ≤255) | 분할 전제이므로 문제 없음 |
 | PlayerID | UINT32 | 문제 없음 |
-| 스폰 | 50개 + 오프셋 공유 | 스폰 수 증설 또는 규칙 기반 무작위 스폰 |
+| 스폰 | 49개 + 오프셋 공유 | 스폰 수 증설 또는 규칙 기반 무작위 스폰 |
 | 트래픽 | 즉시 개별 SC_MOVE | `SC_MOVE_BATCH` 도입(14장) |
 | 방 Content 수 | 바쁜 루프 → 워커 수 제약 | 방당 인원을 늘려 방 수를 줄이는 쪽이 유리 |
 | `maxofsession` | 설정 | `room_count × room_capacity + 여유` |
@@ -893,7 +901,7 @@ UI는 현재 IMGUI(`UiKit`)로 구현한 1차 버전이다. 한글 표시를 위
 | `wander_bot.js` | 배회 봇 (부하·관찰용) |
 | `ws_enter_test.js` | 웹서버 `/ws` 경유 입장 테스트(브라우저와 같은 경로). 스폰 좌표·달리기 배율 출력. `node ws_enter_test.js ws://<주소>:8090/ws [이름] [동시수]`. 같은 IP 4개 이상이면 4번째부터 429(정상) |
 | `StubNetLib.*` | Linux에서 컨텐츠 로직만 빌드하는 NetLib 대체(`GAME_STUB_NETLIB`) |
-| `stress/game_config.txt` | 대규모 테스트용 서버 설정(방 4 x 1250, 세션 6000). 이 폴더에서 `..\..\x64\Release\GameServer.exe` 실행 |
+| `stress/game_config.txt` | 대규모 테스트용 서버 설정(방 4 x 300, 세션 1500. 더 늘리려면 `room_count`·`workerTH_Pool_size`·`maxofsession`을 함께 조정). 이 폴더에서 `..\..\x64\Release\GameServer.exe` 실행 |
 
 ※ 서버를 테스트 스크립트에서 띄울 때 표준 출력을 파일로 리다이렉트할 것(읽지 않는 파이프로 연결하면 콘솔 출력이 막힐 수 있음).
 
@@ -930,13 +938,15 @@ UI는 현재 IMGUI(`UiKit`)로 구현한 1차 버전이다. 한글 표시를 위
 | 사망 | 전환 가능: **재접속**(인원 유지) / **퇴장**. 설정 `death_mode` 또는 실행 중 `M` |
 | 조작 | 시작 시 인원 입력, `C` 인원 변경, `+`/`-` 100명, `M` 사망 모드, `F` 사격, `Q` 종료 |
 | 무인 실행 | `DummyClient.exe --count N --duration 초 [--server ip:port] [--leave] [--nofire]` → 5초마다 통계 한 줄 |
+| 비정상 로그 | `logs/dummy_YYYYMMDD_HHMMSS.log`: 게임 중 비정상 끊김(`DISCONNECT`), 입장 실패(`ENTER_FAIL`), 접속 실패(`CONNECT_FAIL`)를 원인·오류 코드·킥 사유·접속 시간·위치와 함께 기록. 사망 후 서버 정상 종료와 인원 축소는 제외 |
 | 대시보드 | 상태별 인원, 접속·입장 결과, 송수신 KB/s·pkt/s, RTT, 사격·명중 보고·확인·사망, 위치 보정·킥(0이 아니면 검증 문제), 클라 CPU·메모리 |
 
-측정(로컬 1대, 방 4 x 1250): 5,000명 동시 게임중(이동만) 서버 송신 195k pkt/s · CPU 23%, RTT 평균 48 ms / 3,000명 사격 시 서버 확인 명중 약 1,500/s, 위치 보정·킥 0.
+측정(v0.6.1 기준, 로컬 1대, 방 4 x 1250 · 섹터 64m): 5,000명 동시 게임중(이동만) 서버 송신 195k pkt/s · CPU 23%, RTT 평균 48 ms / 3,000명 사격 시 서버 확인 명중 약 1,500/s, 위치 보정·킥 0.
 
 ---
 
 ## 변경 이력
+- v0.7 (2026-10-01): **방 정원 300**(`maxofsession` 1500), **섹터 50m · 30×30 (월드 1500m)**, 스폰 49개(7×7), 예시 맵 1500×1500 재생성, 무기 사거리 상한 50(사용자 무기: 사거리 32·탄속 100), `spawn_offset_radius` 20. 프로토콜 v5: **`SC_PLAYER_COUNT`(3114)** — 서버 전체 접속 인원을 입장·해제 시 방송, 클라 화면 상단 "접속 N명". 더미 클라이언트 비정상 이벤트 로그 파일.
 - v0.6.1 (2026-09-30): 더미 클라이언트(`server/DummyClient`, 18.5)와 대규모 테스트 서버 설정(`test/stress`) 추가. 서버 `ObstacleMap`을 `ObstacleMap.h/.cpp`로 분리(동작 변화 없음).
 - v0.6 (2026-09-30): **Shift 달리기**(×`sprint_multiplier` 1.2, 서버 속도·이동 예산 검증을 달리기 최고 속도 기준으로), 프로토콜 v4(`SC_ENTER_GAME.SprintMultiplier`, 65B), **테스트 모드**(`test_mode` → 모든 플레이어를 섹터 (0,0)에 스폰), `start_server.bat`이 WebGL 웹서버까지 한 번에 실행(`web`은 브라우저 열기만), WebGL에서 캐릭터·총·탄이 **분홍색**으로 나오던 문제 수정(`CreatePrimitive` 기본 머티리얼 → `RuntimeMaterials` URP Lit 에셋).
 - v0.5.1 (2026-09-30): 외부 접속(18.4). `serve_webgl.js`가 0.0.0.0에서 대기하고 `/ws`를 게이트웨이로 중계(X-Forwarded-For 전달) → 포트 하나로 페이지+게임. WebGL 클라는 `?server=` 없으면 `ws(s)://<페이지 주소>/ws`로 접속. 게이트웨이 `GW_HOST`(배치에서 127.0.0.1) 추가, FIN만 받고 닫히지 않던 half-open 연결 누수(IP당 접속 수가 반환되지 않음) 수정.

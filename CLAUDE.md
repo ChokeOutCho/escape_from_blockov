@@ -15,7 +15,7 @@ WebGL 빌드 2.5D PvP 슈팅 게임(동시 50인) 클라이언트(`client/`)와 
   - Unity 에셋: `AssetDatabase.MoveAssetToTrash(path)`
 
 ## 구성 (2026-09-30)
-- 게임 명세: 프로젝트 문서 `claude/game-spec.md` (v0.6.1, 이 저장소의 `GAME_SPEC.md`는 사본)
+- 게임 명세: 프로젝트 문서 `claude/game-spec.md` (v0.7, 이 저장소의 `GAME_SPEC.md`는 사본)
 - 실행: 저장소 최상단 `start_server.bat` [`build`] [`web`] / `stop_server.bat` (명세 18장). 게임 서버·게이트웨이·WebGL 웹서버를 한 번에 실행, `web`은 브라우저 열기
 - 테스트 모드: `server/GameServer/game_config.txt`의 `test_mode: true` → 모든 플레이어를 섹터 (0,0)에 스폰
 - 게임 서버: `server/GameServer/` (README 참고, `GameServer.sln` Release x64). 로직 테스트: `test/` 스텁 + Node 봇
@@ -23,7 +23,7 @@ WebGL 빌드 2.5D PvP 슈팅 게임(동시 50인) 클라이언트(`client/`)와 
 - `ObstacleMap.h/.cpp`(서버)는 NetLib 의존 없이 유지할 것 — DummyClient가 함께 컴파일한다
 - 게이트웨이: `server/gateway/index.js` (WS 8080 → TCP 10301)
 - 엄폐물 맵: `map/obstacles.bmp` (1픽셀 = 1m, 검정 = 벽, 회색 = 낮은 엄폐물). 수정 후 서버 재시작 + Unity `Blockov/Map/Import Obstacles (default BMP)` + WebGL 재빌드
-- 섹터: 64m × 100×100 (`SectorGrid.cs` / 서버 `MapConst`)
+- 섹터: 50m × 30×30 = 월드 1500m (`SectorGrid.cs` / 서버 `ObstacleMap.h`의 `MapConst`). 방 정원 300
 - 클라: `client/escape_from_blockov` — 씬 Title(0) → TestArena(1), 스크립트 `Assets/Scripts/Network`, `Assets/Scripts/Game`, `Assets/Scripts/Map`, 에디터 도구 `Assets/Editor`
 - WebGL: `start_server.bat` → `http://localhost:8090/` (웹서버가 `/ws`로 게임 WS 중계). 외부 접속은 공유기 TCP 8090 포트포워딩(명세 18.4). 8080·10301은 외부에 열지 않음
 
