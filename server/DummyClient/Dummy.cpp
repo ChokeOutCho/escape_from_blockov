@@ -402,8 +402,7 @@ void Dummy::GameTick(uint32_t now)
 	auto it = (canFire && m_targetId) ? m_remotes.find(m_targetId) : m_remotes.end();
 	if (it != m_remotes.end())
 	{
-		// 교전: 멈추고 조준
-		if (m_vx != 0 || m_vz != 0) { m_vx = m_vz = 0; m_forceMove = true; }
+		// 교전: 대상 주위를 옆으로 돌며 조준·사격 (game-spec 21.1)
 		const RemotePlayer& t = it->second;
 		float age = std::min(TimeDiff(now, t.t), REMOTE_EXTRAPOLATE_MAX_MS) / 1000.0f;
 		float tx = t.x + t.vx * age, tz = t.z + t.vz * age;
@@ -417,13 +416,14 @@ void Dummy::GameTick(uint32_t now)
 		else
 		{
 			m_aim = ToAim(dx, dz);
+			CombatMove(now, dt, dx, dz, dist, range);
 			// 교전 중 구르기: 쿨타임이 지나면 초당 roll_combat_per_sec 확률로 적의 옆 방향
 			if (g_cfg.roll && TimeDiff(now, m_rollReadyAt) >= 0 && Rand01() < g_cfg.rollCombatPerSec * dt)
 			{
 				float side = Rand01() < 0.5f ? 1.0f : -1.0f;
 				if (TryRoll(now, -dz / dist * side, dx / dist * side)) return;
 			}
-			SendMoveIfNeeded(now);      // 정지·조준을 먼저 알린 뒤 사격 (서버 원점 검사)
+			SendMoveIfNeeded(now);      // 위치·조준을 먼저 알린 뒤 사격 (서버 원점 검사: 3m 이내)
 			// 대상이 구르는 중이면(SC_ROLL 후 0.25초) 쏘지 않는다: 되감기 위치가 경로 중간이라 명중 보고가 거부됨
 			if (TimeDiff(now, m_nextFire) >= 0 && TimeDiff(now, t.t) >= 0 && TimeDiff(now, m_firstShotAt) >= 0)
 				Fire(now, tx, tz, t.vx, t.vz);
@@ -644,17 +644,12 @@ void Dummy::PickHeading(uint32_t now)
 	m_nextTurn = now + 500;
 }
 
-void Dummy::Wander(uint32_t now, float dt)
+// 0.25m 단위로 나눠 이동 (클라 LocalPlayerController와 같은 방식). 막히면 그 앞에서 멈추고 false
+bool Dummy::MoveStep(float dt)
 {
-	if ((m_vx == 0 && m_vz == 0) || TimeDiff(now, m_nextTurn) >= 0)
-	{
-		PickHeading(now);
-		if (m_vx == 0 && m_vz == 0) return;
-	}
-
-	// 0.25m 단위로 나눠 이동, 막히면 멈추고 다음 틱에 방향 전환 (클라 LocalPlayerController와 같은 방식)
 	float mx = m_vx * dt, mz = m_vz * dt;
 	float len = sqrtf(mx * mx + mz * mz);
+	if (len <= 0) return true;
 	int steps = std::max(1, (int)ceilf(len / 0.25f));
 	float sx = mx / steps, sz = mz / steps;
 	for (int i = 0; i < steps; i++)
@@ -663,14 +658,52 @@ void Dummy::Wander(uint32_t now, float dt)
 		if (nx < MapConst::MinPos + m_radius || nz < MapConst::MinPos + m_radius ||
 			nx > MapConst::MaxPos - m_radius || nz > MapConst::MaxPos - m_radius ||
 			g_map.CircleBlocked(nx, nz, m_radius))
-		{
-			m_vx = m_vz = 0;
-			m_nextTurn = now;
-			m_forceMove = true;
-			break;
-		}
+			return false;
 		m_x = nx;
 		m_z = nz;
+	}
+	return true;
+}
+
+void Dummy::Wander(uint32_t now, float dt)
+{
+	if ((m_vx == 0 && m_vz == 0) || TimeDiff(now, m_nextTurn) >= 0)
+	{
+		PickHeading(now);
+		if (m_vx == 0 && m_vz == 0) return;
+	}
+	if (!MoveStep(dt))
+	{
+		// 막히면 멈추고 다음 틱에 방향 전환
+		m_vx = m_vz = 0;
+		m_nextTurn = now;
+		m_forceMove = true;
+	}
+}
+
+// 교전 중 이동: 대상의 옆 방향(1~3초마다 좌우 전환)으로 걷고, 너무 가까우면 뒤로 / 멀면 앞으로 (game-spec 21.1)
+void Dummy::CombatMove(uint32_t now, float dt, float dx, float dz, float dist, float range)
+{
+	if (TimeDiff(now, m_nextStrafeSwitch) >= 0)
+	{
+		m_strafeSide = Rand01() < 0.5f ? 1.0f : -1.0f;
+		m_nextStrafeSwitch = now + (uint32_t)RandInt(1000, 3000);
+	}
+	float ux = dx / dist, uz = dz / dist;
+	float mx = -uz * m_strafeSide, mz = ux * m_strafeSide;
+	if (dist < range * 0.4f) { mx -= ux * 0.8f; mz -= uz * 0.8f; }
+	else if (dist > range - 4.0f) { mx += ux * 0.8f; mz += uz * 0.8f; }
+	float ml = sqrtf(mx * mx + mz * mz);
+	if (ml < 0.01f) { m_vx = m_vz = 0; return; }
+	m_vx = mx / ml * m_moveSpeed;
+	m_vz = mz / ml * m_moveSpeed;
+	if (!MoveStep(dt))
+	{
+		// 엄폐물에 막힘 → 반대쪽으로
+		m_strafeSide = -m_strafeSide;
+		m_nextStrafeSwitch = now + (uint32_t)RandInt(1000, 3000);
+		m_vx = m_vz = 0;
+		m_forceMove = true;
 	}
 }
 

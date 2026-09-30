@@ -97,6 +97,8 @@ private:
 	void SendMoveIfNeeded(uint32_t now);
 	void Die(uint32_t now);
 	bool TryRoll(uint32_t now, float dx, float dz);
+	bool MoveStep(float dt);
+	void CombatMove(uint32_t now, float dt, float dx, float dz, float dist, float range);
 	bool UpdateRoll(uint32_t now);
 	std::string Name() const;
 	const char* StateName(GameState g) const;
@@ -146,6 +148,10 @@ private:
 	float m_weak = 0;
 	uint32_t m_lastTargetId = 0;
 	uint32_t m_firstShotAt = 0;
+
+	// 교전 중 이동 (game-spec 21.1)
+	float m_strafeSide = 1.0f;
+	uint32_t m_nextStrafeSwitch = 0;
 
 	std::mt19937 m_rng;
 };
