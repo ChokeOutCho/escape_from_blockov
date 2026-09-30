@@ -95,7 +95,7 @@ bool ObstacleMap::LoadBmp(const char* path, std::string& err)
 
 void ObstacleMap::ComputeHash()
 {
-	// FNV-1a 32bit, 셀 타입 바이트를 z=0..6399, x=0..6399 순서로. 클라 ObstacleMapImporter와 동일해야 한다.
+	// FNV-1a 32bit, 셀 타입 바이트를 z=0..1499, x=0..1499 순서로. 클라 ObstacleMapImporter와 동일해야 한다.
 	uint32_t h = 2166136261u;
 	for (size_t i = 0; i < m_cells.size(); i++)
 	{

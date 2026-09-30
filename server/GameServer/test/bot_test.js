@@ -8,7 +8,7 @@ const PORT = parseInt(process.argv[3] || '10301', 10);
 
 const T = { CS_ENTER_GAME: 3000, CS_MOVE: 3001, CS_FIRE: 3002, CS_HIT_REPORT: 3003, CS_PING: 3004, CS_HEARTBEAT: 3005,
   SC_ENTER_GAME: 3100, SC_WEAPON_DEFS: 3101, SC_CREATE: 3102, SC_DELETE: 3103, SC_MOVE: 3104, SC_CORRECT: 3105,
-  SC_FIRE: 3106, SC_DAMAGE: 3107, SC_DIE: 3108, SC_DEATH_RESULT: 3109, SC_SCORE: 3110, SC_RANK: 3111, SC_KICK: 3112, SC_PONG: 3113 };
+  SC_FIRE: 3106, SC_DAMAGE: 3107, SC_DIE: 3108, SC_DEATH_RESULT: 3109, SC_SCORE: 3110, SC_RANK: 3111, SC_KICK: 3112, SC_PONG: 3113, SC_PLAYER_COUNT: 3114 };
 const NAMES = Object.fromEntries(Object.entries(T).map(([k, v]) => [v, k]));
 
 let failures = 0;
@@ -37,6 +37,7 @@ function parse(p) {
       interval: p.readUInt16LE(14), radius: p.readFloatLE(16), pellets: p[28], pierce: p[29] }; break;
     case T.SC_CREATE: m.list = []; for (let i = 0; i < p[2]; i++) { const o = 3 + i * 54; m.list.push({ id: p.readUInt32LE(o), name: readName(p, o + 4), x: p.readFloatLE(o + 28), z: p.readFloatLE(o + 32), hp: p.readUInt16LE(o + 48) }); } break;
     case T.SC_DELETE: m.ids = []; for (let i = 0; i < p[2]; i++) m.ids.push(p.readUInt32LE(3 + i * 4)); break;
+    case T.SC_PLAYER_COUNT: m.total = p.readUInt32LE(2); break;
     case T.SC_MOVE: Object.assign(m, { id: p.readUInt32LE(2), x: p.readFloatLE(6), z: p.readFloatLE(10) }); break;
     case T.SC_CORRECT: Object.assign(m, { x: p.readFloatLE(2), z: p.readFloatLE(6), seq: p.readUInt16LE(10) }); break;
     case T.SC_FIRE: Object.assign(m, { shooter: p.readUInt32LE(2), seq: p.readUInt32LE(6) }); break;
@@ -78,7 +79,7 @@ class Bot {
     }
     return null;
   }
-  async enter(name) { this.send(new W(T.CS_ENTER_GAME).u32(4).name(name)); this.me = await this.wait(T.SC_ENTER_GAME); return this.me; }
+  async enter(name) { this.send(new W(T.CS_ENTER_GAME).u32(5).name(name)); this.me = await this.wait(T.SC_ENTER_GAME); return this.me; }
   now() { return Date.now() - this.t0; }
 }
 
@@ -91,7 +92,9 @@ class Bot {
   check(ea && ea.hp === 100 && Math.abs(ea.speed - 12) < 1e-4 && ea.weapon === 1, 'HP/속도/무기 초기값');
   check(ea && ea.len === 65 && Math.abs(ea.sprint - 1.2) < 1e-4, `SC_ENTER_GAME 65B, 달리기 배율 ${ea && ea.sprint}`);
   const wd = await a.wait(T.SC_WEAPON_DEFS);
-  check(wd && wd.count === 1 && wd.first.damage === 20 && Math.abs(wd.first.range - 64) < 1e-4, 'SC_WEAPON_DEFS');
+  check(wd && wd.count === 1 && wd.first.damage === 20 && Math.abs(wd.first.range - 32) < 1e-4 && Math.abs(wd.first.speed - 100) < 1e-4, 'SC_WEAPON_DEFS (사거리 32, 탄속 100)');
+  const pc1 = await a.wait(T.SC_PLAYER_COUNT);
+  check(pc1 && pc1.total === 1, `입장 시 SC_PLAYER_COUNT 수신 → ${pc1 && pc1.total}`);
   const rk0 = await a.wait(T.SC_RANK);
   check(rk0 !== null, 'SC_RANKING_TOP3 입장 시 수신');
 
@@ -102,6 +105,8 @@ class Bot {
   check(bc && bc.list.some(x => x.id === ea.id), 'B는 입장 시 A를 CREATE로 받음');
   const ac = await a.wait(T.SC_CREATE, m => m.list.some(x => x.id === eb.id));
   check(ac !== null, 'A는 B 입장 CREATE 수신');
+  const pc2 = await a.wait(T.SC_PLAYER_COUNT, m => m.total === 2, 1500);
+  check(pc2 !== null, 'B 입장 → A가 SC_PLAYER_COUNT 2 수신 (방송)');
 
   console.log('== Ping');
   a.send(new W(T.CS_PING).u32(12345));
@@ -140,7 +145,7 @@ class Bot {
   const serverNow = () => Math.floor(a.now() + offset);
   await sleep(300); // B의 위치 이력이 쌓이도록
   const dist = Math.hypot(bx - ax, bz - az);
-  check(dist < 60, `A-B 거리 ${dist.toFixed(1)} (사거리 64 이내)`);
+  check(dist < 30, `A-B 거리 ${dist.toFixed(1)} (사거리 32 이내)`);
   const dirx = (bx - ax) / dist, dirz = (bz - az) / dist;
   let seq = 0, damageSeen = 0, lastHp = 100;
   for (let shot = 0; shot < 5; shot++) {
@@ -149,7 +154,7 @@ class Bot {
     a.send(new W(T.CS_FIRE).u32(seq).u8(1).f(ax).f(az).f(dirx).f(dirz).u32(vt).u16(0));
     const bf = await b.wait(T.SC_FIRE, m => m.seq === seq);
     if (shot === 0) check(bf && bf.shooter === ea.id, 'B가 SC_FIRE 수신 (연출용)');
-    await sleep(Math.min(1500, dist / 60 * 1000));
+    await sleep(Math.min(1500, dist / 100 * 1000));
     a.send(new W(T.CS_HIT_REPORT).u8(1).u32(seq).u8(0).u32(eb.id).f(bx - dirx * 0.4).f(bz - dirz * 0.4));
     const dmg = await b.wait(T.SC_DAMAGE, m => m.seq === seq);
     if (dmg) { damageSeen++; lastHp = dmg.hp; }
@@ -167,6 +172,8 @@ class Bot {
   check(rk !== null, 'SC_RANKING_TOP3 갱신 (A 1점)');
   await sleep(3500);
   check(b.closed, '사망 3초 후 서버가 끊음');
+  const pc3 = await a.wait(T.SC_PLAYER_COUNT, m => m.total === 1, 1500);
+  check(pc3 !== null, 'B 연결 해제 → A가 SC_PLAYER_COUNT 1 수신 (방송)');
 
   console.log('== 중복 피격/위조 보고');
   const c = new Bot('C'); await c.connect(); const ec = await c.enter('Charlie');

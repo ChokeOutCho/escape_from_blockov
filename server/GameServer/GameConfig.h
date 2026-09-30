@@ -38,7 +38,7 @@ struct GameConfig
 	std::string weaponsFile = "weapons.txt";
 	std::string spawnsFile = "spawns.txt";
 	std::string obstacleMapFile = "../../map/obstacles.bmp";
-	int spawnOffsetRadius = 32;
+	int spawnOffsetRadius = 20;
 	float sprintMultiplier = 1.2f;     // Shift 달리기 속도 배율 (클라에 SC_ENTER_GAME으로 전달)
 
 	// 테스트 모드: 모든 플레이어를 한 섹터(test_spawn_sector_x/y, 기본 0,0)에 스폰

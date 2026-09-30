@@ -26,6 +26,8 @@ public:
 	int Reserved() const { return m_reserved.load(); }
 	int PlayerCount() const { return m_playerCount.load(); }
 	int RoomNo() const { return m_roomNo; }
+	// 서버 전체 접속 인원 (모든 방 합계). 입장 시 +1, 연결 해제 시 -1
+	static int OnlineTotal() { return s_online.load(); }
 
 	void OnBegin() override;
 	void OnUpdate(float deltaTime) override;
@@ -56,6 +58,7 @@ private:
 	void UpdateRanking(bool force);
 	void ComputeTop3(std::vector<RankEntry>& out) const;
 	void CountCheat(GamePlayer* p, uint32_t now);
+	void UpdateOnlineCount(uint32_t now);
 
 	// 송신
 	void SendTo(GamePlayer* p, Packet* netPacket);                 // Packet::NetAlloc() 패킷, 소유권 이전
@@ -89,6 +92,9 @@ private:
 
 	std::vector<PendingDisconnect> m_pending;
 	std::vector<RankEntry> m_lastTop;
+	static std::atomic<int> s_online;
+	int m_lastSentOnline = -1;
+	uint32_t m_lastOnlineSend = 0;
 	uint32_t m_lastSecondTick = 0;
 	uint32_t m_lastUpdateTime = 0;
 

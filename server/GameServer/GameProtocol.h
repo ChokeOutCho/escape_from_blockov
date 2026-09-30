@@ -8,7 +8,7 @@
 ////////////////////////////////////////////////////////////////////////
 #include <cstdint>
 
-const uint32_t GAME_PROTOCOL_VERSION = 4;   // v3: SC_ENTER_GAME에 MapHash, v4: SprintMultiplier 추가
+const uint32_t GAME_PROTOCOL_VERSION = 5;   // v3: SC_ENTER_GAME에 MapHash, v4: SprintMultiplier, v5: SC_PLAYER_COUNT
 const int NAME_LEN = 12;                // WCHAR Name[12] (UTF-16LE, 24B)
 
 // 접두사 PT_: windows.h의 SC_MOVE/SC_CLOSE 등(WM_SYSCOMMAND) 매크로와 충돌을 피하기 위함
@@ -37,6 +37,7 @@ enum en_GAME_PACKET_TYPE : uint16_t
 	PT_SC_RANKING_TOP3 = 3111,
 	PT_SC_KICK = 3112,
 	PT_SC_PONG = 3113,
+	PT_SC_PLAYER_COUNT = 3114,  // UINT32 TotalPlayers (서버 전체 접속 인원)                            (6B)
 };
 
 // 고정 길이 페이로드 크기 (Type 포함). 수신 검증에 사용
@@ -54,6 +55,7 @@ const int MAX_CREATE_PER_PACKET = 9;    // 3 + 54*9 = 489
 const int MAX_DELETE_PER_PACKET = 127;  // 3 + 4*127 = 511
 const int MAX_WEAPON_DEFS_PER_PACKET = 16;
 const int LEN_SC_ENTER_GAME = 65;      // v4 (MapHash, SprintMultiplier 포함)
+const int LEN_SC_PLAYER_COUNT = 6;
 
 enum en_ENTER_RESULT : uint8_t
 {

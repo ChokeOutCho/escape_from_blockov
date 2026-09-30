@@ -9,7 +9,7 @@ const COUNT = +(process.argv[4] || 1);
 function enterPacket(name) {
   const p = Buffer.alloc(5 + 30);
   p[0] = 0x77; p.writeUInt16LE(30, 1);
-  p.writeUInt16LE(3000, 5); p.writeUInt32LE(4, 7);
+  p.writeUInt16LE(3000, 5); p.writeUInt32LE(5, 7);
   const n = Buffer.from(name.slice(0, 12), 'utf16le'); n.copy(p, 11);
   return p;
 }

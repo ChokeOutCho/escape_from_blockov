@@ -23,5 +23,5 @@
     "weapons_file": "weapons.txt",
     "spawns_file": "spawns.txt",
     "obstacle_map": "none.bmp",
-    "spawn_offset_radius": 32
+    "spawn_offset_radius": 12
 }

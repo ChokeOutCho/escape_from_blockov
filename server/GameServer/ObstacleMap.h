@@ -10,12 +10,12 @@
 
 namespace MapConst
 {
-	const float SectorSize = 64.0f;
-	const int SectorCount = 100;                // 100 x 100
-	const float WorldSize = SectorSize * SectorCount;   // 6400
-	const int WorldCells = 6400;                // 장애물 격자: 1m x 1m
+	const float SectorSize = 50.0f;
+	const int SectorCount = 30;                 // 30 x 30
+	const float WorldSize = SectorSize * SectorCount;   // 1500
+	const int WorldCells = 1500;                // 장애물 격자: 1m x 1m
 	const float MinPos = 2.0f;                  // 외벽 두께 2
-	const float MaxPos = WorldSize - 2.0f;      // 6398
+	const float MaxPos = WorldSize - 2.0f;      // 1498
 
 	inline int ToSector(float v)
 	{

@@ -1,14 +1,14 @@
 // [테스트 전용] 엄폐물(BMP) 서버 처리 테스트
 //  1) node obstacle_test.js make <out.bmp>          : 테스트 맵 생성 (1024x1024, 24bit)
-//  2) 서버 설정: obstacle_map=<out.bmp>, spawns "10 10", spawn_offset_radius 0, move_speed 200
+//  2) 서버 설정: obstacle_map=<out.bmp>, spawns "10 10"(섹터 50m → 중심 525,525), spawn_offset_radius 0, move_speed 200
 //  3) node obstacle_test.js run <host> <port> <out.bmp>
-// 맵: WALL x[684,686) z[660,690)  /  LOW x[658,660) z[660,690)   스폰 (672,672)
+// 맵: WALL x[537,539) z[513,543)  /  LOW x[511,513) z[513,543)   스폰 (525,525)
 'use strict';
 const fs = require('fs');
 const net = require('net');
 const W = 1024, H = 1024;
-const WALL = { x0: 684, x1: 686, z0: 660, z1: 690 };
-const LOW = { x0: 658, x1: 660, z0: 660, z1: 690 };
+const WALL = { x0: 537, x1: 539, z0: 513, z1: 543 };
+const LOW = { x0: 511, x1: 513, z0: 513, z1: 543 };
 
 function cellType(x, z) {
   if (x >= WALL.x0 && x < WALL.x1 && z >= WALL.z0 && z < WALL.z1) return 2;
@@ -37,7 +37,7 @@ function makeMap(out) {
 
 function expectedHash() {
   let h = 2166136261 >>> 0;
-  const N = 6400;
+  const N = 1500;
   for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) {
     h ^= (x < W && z < H) ? cellType(x, z) : 0;
     h = Math.imul(h, 16777619) >>> 0;
@@ -57,7 +57,7 @@ class Bot {
   connect() { return new Promise(r => { this.s = net.connect(this.port, this.host, r); this.s.on('data', d => { this.buf = Buffer.concat([this.buf, d]); while (this.buf.length >= 5) { const l = this.buf.readUInt16LE(1); if (this.buf.length < 5 + l) break; this.msgs.push(Buffer.from(this.buf.subarray(5, 5 + l))); this.buf = this.buf.subarray(5 + l); } }); }); }
   async wait(type, pred = () => true, ms = 1500) { const end = Date.now() + ms; while (Date.now() < end) { const i = this.msgs.findIndex(p => p.readUInt16LE(0) === type && pred(p)); if (i >= 0) return this.msgs.splice(i, 1)[0]; await sleep(10); } return null; }
   async enter() {
-    this.s.write(pk(3000, (b, o) => { b.writeUInt32LE(4, o); o += 4; for (let i = 0; i < 12; i++) { b.writeUInt16LE(i < this.name.length ? this.name.charCodeAt(i) : 0, o); o += 2; } return o; }));
+    this.s.write(pk(3000, (b, o) => { b.writeUInt32LE(5, o); o += 4; for (let i = 0; i < 12; i++) { b.writeUInt16LE(i < this.name.length ? this.name.charCodeAt(i) : 0, o); o += 2; } return o; }));
     const e = await this.wait(3100);
     this.id = e.readUInt32LE(3); this.x = e.readFloatLE(8); this.z = e.readFloatLE(12); this.offset = e.readUInt32LE(29) - this.now(); this.mapHash = e.readUInt32LE(57);
     return e;
@@ -80,7 +80,7 @@ class Bot {
     const dx = target.x - this.x, dz = target.z - this.z, dist = Math.hypot(dx, dz);
     const seq = ++this.shot, vt = Math.floor(this.now() + this.offset - 100);
     this.s.write(pk(3002, (b, o) => { b.writeUInt32LE(seq, o); b[o + 4] = 1; b.writeFloatLE(this.x, o + 5); b.writeFloatLE(this.z, o + 9); b.writeFloatLE(dx / dist, o + 13); b.writeFloatLE(dz / dist, o + 17); b.writeUInt32LE(vt >>> 0, o + 21); b.writeUInt16LE(0, o + 25); return o + 27; }));
-    await sleep(dist / 60 * 1000);
+    await sleep(dist / 100 * 1000);
     const hx = target.x - dx / dist * 0.4, hz = target.z - dz / dist * 0.4;
     this.s.write(pk(3003, (b, o) => { b[o] = 1; b.writeUInt32LE(seq, o + 1); b[o + 5] = 0; b.writeUInt32LE(target.id, o + 6); b.writeFloatLE(hx, o + 10); b.writeFloatLE(hz, o + 14); return o + 18; }));
     return seq;
@@ -92,22 +92,22 @@ async function run(host, port) {
   await a.connect(); await a.enter(); await b.connect(); await b.enter();
   const eh = expectedHash();
   check(a.mapHash === eh, `SC_ENTER_GAME MapHash 0x${a.mapHash.toString(16)} == 기대값 0x${eh.toString(16)}`);
-  check(Math.abs(a.x - 672) < 0.01 && Math.abs(a.z - 672) < 0.01, `A 스폰 (672,672) → (${a.x.toFixed(1)},${a.z.toFixed(1)})`);
+  check(Math.abs(a.x - 525) < 0.01 && Math.abs(a.z - 525) < 0.01, `A 스폰 (525,525) → (${a.x.toFixed(1)},${a.z.toFixed(1)})`);
 
   console.log('== 이동 차단');
-  const okWall = await a.walkTo(690, 672);
-  check(!okWall && a.x < 684, `벽 통과 이동 → 보정 (x=${a.x.toFixed(2)})`);
-  await a.walkTo(672, 672);
-  const okLow = await a.walkTo(650, 672);
-  check(!okLow && a.x > 660, `낮은 엄폐물 통과 이동 → 보정 (x=${a.x.toFixed(2)})`);
-  await a.walkTo(672, 672);
+  const okWall = await a.walkTo(543, 525);
+  check(!okWall && a.x < 537, `벽 통과 이동 → 보정 (x=${a.x.toFixed(2)})`);
+  await a.walkTo(525, 525);
+  const okLow = await a.walkTo(503, 525);
+  check(!okLow && a.x > 513, `낮은 엄폐물 통과 이동 → 보정 (x=${a.x.toFixed(2)})`);
+  await a.walkTo(525, 525);
 
   console.log('== 사격 차단');
-  check(await b.walkTo(672, 700) && await b.walkTo(695, 700) && await b.walkTo(695, 672), 'B가 벽을 돌아 동쪽(695,672)으로 이동');
+  check(await b.walkTo(525, 553) && await b.walkTo(548, 553) && await b.walkTo(548, 525), 'B가 벽을 돌아 동쪽(548,525)으로 이동');
   await sleep(600);
   let seq = await a.shootAt(b);
   check((await b.wait(3107, p => p.readUInt32LE(10) === seq, 800)) === null, '벽 너머 피격 보고 → 거부');
-  check(await b.walkTo(695, 700) && await b.walkTo(650, 700) && await b.walkTo(650, 672), 'B가 서쪽(650,672)으로 이동');
+  check(await b.walkTo(548, 553) && await b.walkTo(503, 553) && await b.walkTo(503, 525), 'B가 서쪽(503,525)으로 이동');
   await sleep(600);
   seq = await a.shootAt(b);
   const dmg = await b.wait(3107, p => p.readUInt32LE(10) === seq, 800);

@@ -7,7 +7,7 @@ function pk(type, fill) { const b = Buffer.alloc(128); b.writeUInt16LE(type, 0);
 const s = net.connect(PORT, HOST);
 let buf = Buffer.alloc(0), me = null, x = 0, z = 0, cx = 0, cz = 0, t0 = Date.now(), offset = 0, others = new Map(), seq = 0, mseq = 0, dead = false;
 const now = () => Date.now() - t0;
-s.on('connect', () => s.write(pk(3000, (b, o) => { b.writeUInt32LE(4, o); o += 4; for (let i = 0; i < 12; i++) { b.writeUInt16LE(i < NAME.length ? NAME.charCodeAt(i) : 0, o); o += 2; } return o; })));
+s.on('connect', () => s.write(pk(3000, (b, o) => { b.writeUInt32LE(5, o); o += 4; for (let i = 0; i < 12; i++) { b.writeUInt16LE(i < NAME.length ? NAME.charCodeAt(i) : 0, o); o += 2; } return o; })));
 s.on('data', d => {
   buf = Buffer.concat([buf, d]);
   while (buf.length >= 5) {

@@ -13,6 +13,7 @@ namespace
 	const float FIRE_TOKEN_CAP = 3.0f;
 	const float FIRE_ORIGIN_TOLERANCE = 3.0f;
 	const int FUTURE_VIEWTIME_TOLERANCE_MS = 50;
+	const int ONLINE_BROADCAST_MIN_MS = 200;   // 접속 인원 방송 최소 간격 (대량 접속 시 병합)
 
 	bool Finite(float v) { return std::isfinite(v); }
 	float Clampf(float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); }
@@ -23,6 +24,8 @@ namespace
 		return a;
 	}
 }
+
+std::atomic<int> BattleContent::s_online{ 0 };
 
 BattleContent::BattleContent(int roomNo, const GameConfig& cfg, const WeaponTable& weapons, const SpawnTable& spawns, const ObstacleMap& obstacles)
 	: NetLib_Content(cfg.battleTickMs), m_roomNo(roomNo), m_cfg(cfg), m_weapons(weapons), m_spawns(spawns), m_obstacles(obstacles),
@@ -87,6 +90,7 @@ void BattleContent::OnEnter(unsigned long long sessionHandle, void* completionKe
 	m_players[sessionHandle] = p;
 	m_byId[p->playerId] = p;
 	m_playerCount.store((int)m_players.size());
+	s_online.fetch_add(1);
 	m_sectors.Add(p, MapConst::ToSector(p->x), MapConst::ToSector(p->z));
 
 	SendEnterSequence(p);
@@ -121,6 +125,12 @@ void BattleContent::SendEnterSequence(GamePlayer* p)
 	W32(pkt, m_obstacles.Hash());
 	WF(pkt, m_cfg.sprintMultiplier);
 	SendTo(p, pkt);
+
+	// 1-1) PT_SC_PLAYER_COUNT (현재 서버 전체 인원, 이후 변경은 UpdateOnlineCount가 방송)
+	Packet* cnt = Packet::NetAlloc();
+	W16(cnt, PT_SC_PLAYER_COUNT);
+	W32(cnt, (uint32_t)s_online.load());
+	SendTo(p, cnt);
 
 	// 2) PT_SC_WEAPON_DEFS (16개 단위)
 	const auto& defs = m_weapons.All();
@@ -680,6 +690,26 @@ void BattleContent::OnUpdate(float deltaTime)
 	}
 
 	UpdateRanking(false);
+	UpdateOnlineCount(now);
+}
+
+// 서버 전체 접속 인원이 바뀌었으면 방 전체에 방송 (최소 간격 ONLINE_BROADCAST_MIN_MS로 병합)
+void BattleContent::UpdateOnlineCount(uint32_t now)
+{
+	int total = s_online.load();
+	if (total == m_lastSentOnline || TimeDiff(now, m_lastOnlineSend) < ONLINE_BROADCAST_MIN_MS) return;
+	m_lastSentOnline = total;
+	m_lastOnlineSend = now;
+
+	std::vector<unsigned long long> hs;
+	hs.reserve(m_players.size());
+	for (auto& kv : m_players)
+		if (!kv.second->disconnecting) hs.push_back(kv.first);
+	if (hs.empty()) return;
+	Packet* pkt = Packet::Alloc();
+	W16(pkt, PT_SC_PLAYER_COUNT);
+	W32(pkt, (uint32_t)total);
+	Multicast(hs, pkt);
 }
 
 void BattleContent::ComputeTop3(std::vector<RankEntry>& out) const
@@ -736,6 +766,7 @@ void BattleContent::OnRelease(unsigned long long sessionHandle, SESSION_LEAVE_CO
 	m_players.erase(it);
 	m_byId.erase(p->playerId);
 	m_playerCount.store((int)m_players.size());
+	s_online.fetch_sub(1);
 	m_reserved.fetch_sub(1);
 	GameLog("[room %d] player %u left (code %d, score %u)", m_roomNo, p->playerId, (int)code, p->score);
 	delete p;

@@ -121,7 +121,8 @@ int main()
 			Line(" [TEST MODE] 모든 플레이어 스폰 = 섹터 (%d, %d)   (game_config.txt test_mode)", cfg.testSpawnSectorX, cfg.testSpawnSectorY);
 		else
 			Line("");
-		Line(" [Sessions]  total %d   entry(waiting) %d", server->GetSessionCount(), server->Entry()->WaitingCount());
+		Line(" [Sessions]  total %d   entry(waiting) %d   online(in rooms) %d", server->GetSessionCount(), server->Entry()->WaitingCount(),
+		     BattleContent::OnlineTotal());
 		{
 			std::string rooms;
 			char tmp[48];
