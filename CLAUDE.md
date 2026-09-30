@@ -15,10 +15,12 @@ WebGL 빌드 2.5D PvP 슈팅 게임(동시 50인) 클라이언트(`client/`)와 
   - Unity 에셋: `AssetDatabase.MoveAssetToTrash(path)`
 
 ## 구성 (2026-09-30)
-- 게임 명세: 프로젝트 문서 `claude/game-spec.md` (v0.6, 이 저장소의 `GAME_SPEC.md`는 사본)
+- 게임 명세: 프로젝트 문서 `claude/game-spec.md` (v0.6.1, 이 저장소의 `GAME_SPEC.md`는 사본)
 - 실행: 저장소 최상단 `start_server.bat` [`build`] [`web`] / `stop_server.bat` (명세 18장). 게임 서버·게이트웨이·WebGL 웹서버를 한 번에 실행, `web`은 브라우저 열기
 - 테스트 모드: `server/GameServer/game_config.txt`의 `test_mode: true` → 모든 플레이어를 섹터 (0,0)에 스폰
 - 게임 서버: `server/GameServer/` (README 참고, `GameServer.sln` Release x64). 로직 테스트: `test/` 스텁 + Node 봇
+- 더미 클라이언트: `server/DummyClient/` (C++ IOCP, `DummyClient.sln` Release x64, README 참고). 대규모 테스트 서버 설정: `server/GameServer/test/stress/`
+- `ObstacleMap.h/.cpp`(서버)는 NetLib 의존 없이 유지할 것 — DummyClient가 함께 컴파일한다
 - 게이트웨이: `server/gateway/index.js` (WS 8080 → TCP 10301)
 - 엄폐물 맵: `map/obstacles.bmp` (1픽셀 = 1m, 검정 = 벽, 회색 = 낮은 엄폐물). 수정 후 서버 재시작 + Unity `Blockov/Map/Import Obstacles (default BMP)` + WebGL 재빌드
 - 섹터: 64m × 100×100 (`SectorGrid.cs` / 서버 `MapConst`)

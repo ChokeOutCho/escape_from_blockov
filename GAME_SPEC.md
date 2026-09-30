@@ -1,4 +1,4 @@
-# escape_from_blockov 게임 명세서 v0.6
+# escape_from_blockov 게임 명세서 v0.6.1
 
 > 작성일: 2026-09-30
 > 대상: Unity 6000.6.3f1 클라이언트(`client/escape_from_blockov`), NetLib 기반 게임 서버(`server/`), WS↔TCP 게이트웨이(1단계 한정, `server/gateway/`)
@@ -537,7 +537,7 @@ sequenceDiagram
 | `GamePlayer` | – | TLS 풀 객체. 생성 시 sessionHandle 필수 인자. 위치 이력·사격 기록 링 보유 |
 | `PositionHistory` | – | 고정 링버퍼 64개 `{timeMs, x, z, vx, vz}`, `PosAt(t)` 제공(9.5) |
 | `SectorMap` | – | 섹터 100×100(64m)별 플레이어 목록, 3×3 조회·diff |
-| `ObstacleMap` | – | BMP 로드(`LoadBmp`), 칸 조회, `CircleBlocked`(캐릭터 원), `SegmentBlocked`(DDA 선분, 이동/총알 모드), `FindFree`, `Hash`. 불변 전역, 모든 Content가 락 없이 읽음 |
+| `ObstacleMap` | – | (`ObstacleMap.h/.cpp`, NetLib 의존 없음 — DummyClient도 함께 컴파일) BMP 로드(`LoadBmp`), 칸 조회, `CircleBlocked`(캐릭터 원), `SegmentBlocked`(DDA 선분, 이동/총알 모드), `FindFree`, `Hash`. 불변 전역, 모든 Content가 락 없이 읽음 |
 | `WeaponTable` | – | `weapons.txt` 로드, 불변(read-only) 전역. 모든 Content가 락 없이 읽음 |
 
 > 구현: `server/GameServer/` (별도 VS 솔루션, NetLib 소스 공유). `ContentEchoServer`는 라이브러리 예제로 남겨 둔다. GamePlayer는 TLS 풀 대신 new/delete(방 입장·퇴장 시에만 발생).
@@ -828,7 +828,7 @@ UI는 현재 IMGUI(`UiKit`)로 구현한 1차 버전이다. 한글 표시를 위
 6. ~~WebGL 빌드~~ (완료: `client/escape_from_blockov/Builds/WebGL`, 12.7MB, Brotli + 압축 해제 폴백). 로딩·타이틀·한글 이름 입력 확인. **브라우저에서의 WebSocket 접속·전투는 미검증**(검증 도구의 브라우저가 WebSocket을 차단) → 로컬 확인: `node Tools/serve_webgl.js` 후 Chrome에서 `http://localhost:8090/?server=ws://127.0.0.1:8080/`.
    - 검증 완료: 서버 MSVC Release x64 빌드, 실제 NetLib 서버 + Node 봇 시나리오 테스트 28항목 통과, Unity 에디터 ↔ 게이트웨이 ↔ 서버 입장·이동·상호 피격·사망·랭킹 확인.
 7. ~~엄폐물(BMP) 서버 검증·클라 충돌·임포트 도구, 섹터 64m, 미니맵, 서버 모니터링, 실행 배치 파일~~ (완료, v0.5)
-8. 봇 클라이언트(더미 50~100명)로 부하·검증 규칙 튜닝.
+8. ~~더미 클라이언트(`server/DummyClient`, C++ IOCP)로 부하·검증~~ (완료: 5,000명 동시 접속, 18.5). 검증 규칙 튜닝은 계속
 9. NetLib 네이티브 WebSocket(13.2) → 게이트웨이 제거.
 
 ---
@@ -893,6 +893,7 @@ UI는 현재 IMGUI(`UiKit`)로 구현한 1차 버전이다. 한글 표시를 위
 | `wander_bot.js` | 배회 봇 (부하·관찰용) |
 | `ws_enter_test.js` | 웹서버 `/ws` 경유 입장 테스트(브라우저와 같은 경로). 스폰 좌표·달리기 배율 출력. `node ws_enter_test.js ws://<주소>:8090/ws [이름] [동시수]`. 같은 IP 4개 이상이면 4번째부터 429(정상) |
 | `StubNetLib.*` | Linux에서 컨텐츠 로직만 빌드하는 NetLib 대체(`GAME_STUB_NETLIB`) |
+| `stress/game_config.txt` | 대규모 테스트용 서버 설정(방 4 x 1250, 세션 6000). 이 폴더에서 `..\..\x64\Release\GameServer.exe` 실행 |
 
 ※ 서버를 테스트 스크립트에서 띄울 때 표준 출력을 파일로 리다이렉트할 것(읽지 않는 파이프로 연결하면 콘솔 출력이 막힐 수 있음).
 
@@ -917,9 +918,26 @@ UI는 현재 IMGUI(`UiKit`)로 구현한 1차 버전이다. 한글 표시를 위
 - Brotli 압축 빌드는 http에서 브라우저 자동 해제가 안 되어 Unity 로더가 JS로 해제한다(첫 로딩이 약간 느림, 동작에는 문제 없음).
 - 공유기 내부 기기끼리 같은 공인 IP로 보이므로(예: 한 집에서 4명 이상) IP당 3개 제한에 걸릴 수 있다 → `MAX_PER_IP` 조정.
 
+### 18.5 더미 클라이언트 (`server/DummyClient`)
+
+스트레스·플레이 테스트용. 인원 수를 입력받아 더미 플레이어를 게임 서버에 **TCP 직접** 접속시킨다(게이트웨이 경유 없음). 자세한 내용은 `server/DummyClient/README.md`.
+
+| 항목 | 내용 |
+|---|---|
+| 구현 | C++ Windows IOCP 콘솔(`DummyClient.sln`, Release x64). 다중 세션 전용 엔진(ConnectEx, 세션당 수신 1·송신 1, abortive close로 TIME_WAIT 없음). 서버 `GameProtocol.h`·`ObstacleMap.cpp` 공유 |
+| 규모 | 한 프로세스 최대 `max_dummies`(20,000). 한 PC → 서버 한 주소는 임시 포트 수(약 16,000)가 한계 |
+| 행동 | 무작위 배회(엄폐물 회피, 일부 달리기) → 시야 안 교전 거리·시야선이 확보된 가장 가까운 플레이어 발견 시 **정지 후 사격**. 리드 사격 + 탄 비행 시간 뒤 실제 명중 위치만 `CS_HIT_REPORT` (서버 되감기 검증 통과) |
+| 사망 | 전환 가능: **재접속**(인원 유지) / **퇴장**. 설정 `death_mode` 또는 실행 중 `M` |
+| 조작 | 시작 시 인원 입력, `C` 인원 변경, `+`/`-` 100명, `M` 사망 모드, `F` 사격, `Q` 종료 |
+| 무인 실행 | `DummyClient.exe --count N --duration 초 [--server ip:port] [--leave] [--nofire]` → 5초마다 통계 한 줄 |
+| 대시보드 | 상태별 인원, 접속·입장 결과, 송수신 KB/s·pkt/s, RTT, 사격·명중 보고·확인·사망, 위치 보정·킥(0이 아니면 검증 문제), 클라 CPU·메모리 |
+
+측정(로컬 1대, 방 4 x 1250): 5,000명 동시 게임중(이동만) 서버 송신 195k pkt/s · CPU 23%, RTT 평균 48 ms / 3,000명 사격 시 서버 확인 명중 약 1,500/s, 위치 보정·킥 0.
+
 ---
 
 ## 변경 이력
+- v0.6.1 (2026-09-30): 더미 클라이언트(`server/DummyClient`, 18.5)와 대규모 테스트 서버 설정(`test/stress`) 추가. 서버 `ObstacleMap`을 `ObstacleMap.h/.cpp`로 분리(동작 변화 없음).
 - v0.6 (2026-09-30): **Shift 달리기**(×`sprint_multiplier` 1.2, 서버 속도·이동 예산 검증을 달리기 최고 속도 기준으로), 프로토콜 v4(`SC_ENTER_GAME.SprintMultiplier`, 65B), **테스트 모드**(`test_mode` → 모든 플레이어를 섹터 (0,0)에 스폰), `start_server.bat`이 WebGL 웹서버까지 한 번에 실행(`web`은 브라우저 열기만), WebGL에서 캐릭터·총·탄이 **분홍색**으로 나오던 문제 수정(`CreatePrimitive` 기본 머티리얼 → `RuntimeMaterials` URP Lit 에셋).
 - v0.5.1 (2026-09-30): 외부 접속(18.4). `serve_webgl.js`가 0.0.0.0에서 대기하고 `/ws`를 게이트웨이로 중계(X-Forwarded-For 전달) → 포트 하나로 페이지+게임. WebGL 클라는 `?server=` 없으면 `ws(s)://<페이지 주소>/ws`로 접속. 게이트웨이 `GW_HOST`(배치에서 127.0.0.1) 추가, FIN만 받고 닫히지 않던 half-open 연결 누수(IP당 접속 수가 반환되지 않음) 수정.
 - v0.5 (2026-09-30): 섹터 128m/50×50 → **64m/100×100**(시야 3×3 유지, 무기 사거리 64), **BMP 엄폐물 맵**(검정=벽, 회색=낮은 엄폐물, 서버 이동·총알 검증, 클라 충돌·탄 소멸, Unity 임포트 도구, 예시 맵), 전체 맵 **M** 키, 프로토콜 v3(`SC_ENTER_GAME.MapHash`, 61B), 서버 콘솔 모니터링 대시보드, `start_server.bat`/`stop_server.bat`(18장).
