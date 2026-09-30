@@ -7,6 +7,9 @@
 *.vcxproj.user
 server/GameServer/GameServer/
 
+# Unity WebGL 빌드 시 생성되는 Burst 산출물
+client/escape_from_blockov/Data/
+
 # 서버 실행 산출물 (로그, 크래시 덤프 등)
 **/syslogs/
 *.log
