@@ -25,6 +25,13 @@ WebGL 빌드 2.5D PvP 슈팅 게임(동시 50인) 클라이언트(`client/`)와 
 - 클라: `client/escape_from_blockov` — 씬 Title(0) → TestArena(1), 스크립트 `Assets/Scripts/Network`, `Assets/Scripts/Game`, `Assets/Scripts/Map`, 에디터 도구 `Assets/Editor`
 - WebGL: `start_server.bat` → `http://localhost:8090/` (웹서버가 `/ws`로 게임 WS 중계). 외부 접속은 공유기 TCP 8090 포트포워딩(명세 18.4). 8080·10301은 외부에 열지 않음
 
+## Git
+- 저장소 최상위 하나로 관리(`main`). 변경 작업을 마치면 의미 단위로 커밋한다. 원격(push)은 설정하지 않음.
+- `skills/`는 서브모듈(Unity-Technologies/skills). 업데이트: `git submodule update --remote skills`
+- `.gitattributes`: 최상위는 `* -text`(CP949/CRLF 서버 소스·배치 파일을 바이트 그대로 보존). `client/escape_from_blockov/`는 Unity 템플릿 규칙(일부 바이너리는 Git LFS)이 우선.
+- 커밋은 Windows git(`C:\Program Files\Git`)으로 한다. Linux VM의 git은 LFS·줄바꿈 처리가 달라 상태가 다르게 보이므로 읽기 전용으로만 사용.
+- 스크립트에서 git을 실행할 때 stdout/stderr를 동시에(비동기로) 읽거나 파일로 리다이렉트할 것. 순차로 ReadToEnd 하면 경고 출력이 파이프를 채워 git과 호출측이 서로 멈춘다.
+
 ## 작업 시 주의
 - `start` 로 창을 띄우는 배치 파일을 출력 리다이렉트/ReadToEnd로 실행하지 말 것(자식이 파이프를 물고 있어 호출측이 멈춤).
 - 서버를 스크립트에서 띄울 때 표준 출력은 파일로 리다이렉트(읽지 않는 파이프 금지).
