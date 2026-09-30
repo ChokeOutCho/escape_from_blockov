@@ -60,6 +60,30 @@ MSBuild DummyClient.sln /p:Configuration=Release /p:Platform=x64
 | name_prefix | Dummy | 이름 접두사 (번호 포함 12자 이내) |
 | obstacle_map | ../../map/obstacles.bmp | 서버와 같은 엄폐물 맵 |
 
+## 비정상 이벤트 로그 (`logs/dummy_YYYYMMDD_HHMMSS.log`)
+
+실행할 때마다 실행 폴더 아래 `logs/`에 새 파일을 만든다(1초마다 flush, `.gitignore`의 `*.log`로 제외). 대시보드 `[로그]` 줄과 무인 모드 `log a/b/c`에 건수가 나온다.
+
+| 종류 | 기록 조건 |
+|---|---|
+| `DISCONNECT` | 게임 중(InGame) 우리가 끊지 않았는데 연결이 끊김. 사망 후 서버의 정상 종료(3초 뒤)와 인원 축소로 인한 종료는 제외 |
+| `ENTER_FAIL` | 입장 중 끊김, 입장 거부(SERVER_FULL / VERSION_MISMATCH / INVALID_NAME), 입장 타임아웃(10초) |
+| `CONNECT_FAIL` | TCP 접속 실패(서버 꺼짐, 포트 고갈 등) |
+
+한 줄 형식:
+
+```
+2026-10-01 01:20:14.480 [DISCONNECT] #760 Dummy760 id=3 state=InGame reason="recv error" err=(64 지정된 네트워크 이름을 더 이상 사용할 수 없습니다) kick=0 connected=87ms lastRecv=8ms pos=(325.0,325.0) visible=0 sendQ=0B
+```
+
+| 필드 | 의미 |
+|---|---|
+| reason | `server closed connection (FIN)`(서버가 정상 종료), `recv error`/`send error`(RST 등 소켓 오류), `protocol error`, `send queue overflow`(서버가 수신하지 않음), `enter timeout`, `enter rejected: ...` |
+| err | Windows/WSA 오류 코드와 설명 (64 = 상대가 연결을 끊음, 10054 = 연결 재설정 등) |
+| kick | 끊기기 전에 받은 `SC_KICK` 사유 (1 타임아웃, 2 잘못된 패킷, 3 치트 의심, 4 서버 종료) |
+| connected / lastRecv | 접속 후 경과 시간 / 마지막 패킷 수신 후 경과 시간 |
+| pos / visible / sendQ | 마지막 위치, 시야 안 인원, 남은 송신 큐 |
+
 ## 대규모 테스트 시 서버 설정
 
 기본 `game_config.txt`는 방 4 x 50명, `maxofsession` 1000이라 수천 명을 받을 수 없다.

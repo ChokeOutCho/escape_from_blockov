@@ -1,5 +1,6 @@
 #include "Dummy.h"
 #include "Network.h"
+#include "EventLog.h"
 #include <cmath>
 #include <algorithm>
 
@@ -61,7 +62,7 @@ void Dummy::Tick(uint32_t now)
 	}
 	if (!wanted && (net == NetState::Connected || net == NetState::Connecting))
 	{
-		g_net.Close(this, true, now);     // 인원 축소
+		g_net.Close(this, true, now, "target count reduced");     // 인원 축소
 		return;
 	}
 	if (net != NetState::Connected) return;
@@ -73,7 +74,7 @@ void Dummy::Tick(uint32_t now)
 		{
 			g_stats.enterTimeout++;
 			m_reconnectAt = now + 3000;
-			g_net.Close(this, false, now);
+			g_net.Close(this, false, now, "enter timeout (no SC_ENTER_GAME in 10s)");
 		}
 		break;
 	case GameState::InGame:
@@ -81,7 +82,7 @@ void Dummy::Tick(uint32_t now)
 		break;
 	case GameState::Dead:
 		// 서버가 death_disconnect_ms(3초) 뒤 끊는다. 너무 오래 걸리면 직접 끊는다
-		if (TimeDiff(now, m_deadAt) > 10000) g_net.Close(this, true, now);
+		if (TimeDiff(now, m_deadAt) > 10000) g_net.Close(this, true, now, "dead but not disconnected by server in 10s");
 		break;
 	default:
 		break;
@@ -96,18 +97,63 @@ void Dummy::OnConnected(uint32_t now)
 	game = GameState::Entering;
 	m_enterDeadline = now + ENTER_TIMEOUT_MS;
 
-	std::string name = g_cfg.namePrefix + std::to_string(index + 1);
-	if (name.size() > (size_t)NAME_LEN) name = name.substr(name.size() - NAME_LEN);
+	std::string name = Name();
+	lastKick = 0;
 	PacketWriter w(PT_CS_ENTER_GAME);
 	w.W32(GAME_PROTOCOL_VERSION);
 	w.WName(name);
 	Send(w);
 }
 
+std::string Dummy::Name() const
+{
+	std::string name = g_cfg.namePrefix + std::to_string(index + 1);
+	if (name.size() > (size_t)NAME_LEN) name = name.substr(name.size() - NAME_LEN);
+	return name;
+}
+
+const char* Dummy::StateName(GameState g) const
+{
+	switch (g)
+	{
+	case GameState::Entering: return "Entering";
+	case GameState::InGame: return "InGame";
+	case GameState::Dead: return "Dead";
+	default: return "None";
+	}
+}
+
+void Dummy::LogConnectFail(const char* reason, int err)
+{
+	g_eventLog.Add(EventLog::CONNECT_FAIL);
+	g_eventLog.Write("CONNECT_FAIL", "#%d %s %s (%d %s)", index + 1, Name().c_str(), reason, err, EventLog::ErrorText(err).c_str());
+}
+
 void Dummy::OnClosed(uint32_t now, bool intended)
 {
 	if (!intended && game == GameState::InGame) g_stats.unexpectedDisconnects++;
 	GameState prev = game;
+
+	// 비정상 종료 기록: 우리가 끊지 않았고, 사망 후 서버의 정상 종료(death_disconnect)도 아닌 경우
+	if (!intended && prev != GameState::Dead)
+	{
+		const char* reason = closeReason ? closeReason : "unknown";
+		std::string errText = closeError ? std::to_string(closeError) + " " + EventLog::ErrorText(closeError) : std::string("-");
+		if (closedWhileConnecting)
+		{
+			g_eventLog.Add(EventLog::CONNECT_FAIL);
+			g_eventLog.Write("CONNECT_FAIL", "#%d %s %s (%s)", index + 1, Name().c_str(), reason, errText.c_str());
+		}
+		else
+		{
+			bool enterFail = (prev == GameState::Entering || prev == GameState::None);
+			g_eventLog.Add(enterFail ? EventLog::ENTER_FAIL : EventLog::DISCONNECT);
+			g_eventLog.Write(enterFail ? "ENTER_FAIL" : "DISCONNECT",
+				"#%d %s id=%u state=%s reason=\"%s\" err=(%s) kick=%d connected=%dms lastRecv=%dms pos=(%.1f,%.1f) visible=%d sendQ=%dB",
+				index + 1, Name().c_str(), m_myId, StateName(prev), reason, errText.c_str(), (int)lastKick,
+				TimeDiff(now, connectedAt), TimeDiff(now, lastRecvAt), m_x, m_z, (int)m_remotes.size(), (int)sendQ.size());
+		}
+	}
 	game = GameState::None;
 	m_remotes.clear();
 	m_hits.clear();
@@ -147,7 +193,8 @@ void Dummy::OnPacket(const uint8_t* payload, int len, uint32_t now)
 		{
 			if (result == ENTER_SERVER_FULL) { g_stats.enterFull++; m_reconnectAt = now + 5000 + (uint32_t)RandInt(0, 2000); }
 			else g_stats.enterOther++;
-			g_net.Close(this, false, now);
+			static const char* names[] = { "OK", "enter rejected: SERVER_FULL", "enter rejected: VERSION_MISMATCH", "enter rejected: INVALID_NAME" };
+			g_net.Close(this, false, now, result < 4 ? names[result] : "enter rejected: unknown result");
 			return;
 		}
 		m_myId = r.U32();
@@ -263,6 +310,7 @@ void Dummy::OnPacket(const uint8_t* payload, int len, uint32_t now)
 	case PT_SC_KICK:
 	{
 		uint8_t reason = r.U8();
+		lastKick = reason;
 		g_stats.kicks[reason < 5 ? reason : 0]++;
 		return;
 	}

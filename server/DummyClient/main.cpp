@@ -10,6 +10,7 @@
 #include "Common.h"
 #include "Dummy.h"
 #include "Network.h"
+#include "EventLog.h"
 #include <process.h>
 #include <conio.h>
 #include <psapi.h>
@@ -222,6 +223,8 @@ namespace
 		Line(" [검증]    위치보정 %.0f/s (누적 %lld)   킥: 타임아웃 %lld  잘못된패킷 %lld  치트의심 %lld  서버종료 %lld",
 		     rate(cur.corrections, prev.corrections), cur.corrections, cur.kicks[1], cur.kicks[2], cur.kicks[3], cur.kicks[4]);
 		Line("");
+		Line(" [로그]    비정상 끊김 %lld   접속 실패 %lld   입장 실패 %lld   → %s",
+		     g_eventLog.Count(EventLog::DISCONNECT), g_eventLog.Count(EventLog::CONNECT_FAIL), g_eventLog.Count(EventLog::ENTER_FAIL), g_eventLog.Path().c_str());
 		Line(" [클라]    CPU %5.1f%%   메모리 %.0f MB   IO 스레드 %d   로직 스레드 %d (틱 %dms)",
 		     cpu, mem, g_cfg.ioThreads, g_cfg.logicThreads, g_cfg.tickMs);
 		Line("=========================================================================");
@@ -235,14 +238,15 @@ namespace
 		int rmax = g_stats.rttMax.exchange(0);
 		auto rate = [&](long long a, long long b) { return (double)(a - b) / sec; };
 		printf("[%4us] game %d enter %d dead %d conn %d idle %d | recv %.0fKB/s %.0fpkt/s send %.0fKB/s %.0fpkt/s | rtt avg %lld max %d | "
-		       "shot %.0f/s hit %.0f/s confirm %.0f/s death %.0f/s | corr %lld kick %lld/%lld/%lld | full %lld fail %lld unexp %lld | cpu %.1f%% mem %.0fMB\n",
+		       "shot %.0f/s hit %.0f/s confirm %.0f/s death %.0f/s | corr %lld kick %lld/%lld/%lld | full %lld fail %lld unexp %lld | log %lld/%lld/%lld | cpu %.1f%% mem %.0fMB\n",
 		       uptimeSec, st.inGame, st.entering, st.dead, st.connecting, st.idle,
 		       rate(cur.recvBytes, prev.recvBytes) / 1024.0, rate(cur.recvPkts, prev.recvPkts),
 		       rate(cur.sendBytes, prev.sendBytes) / 1024.0, rate(cur.sendPkts, prev.sendPkts),
 		       rc ? rs / rc : 0, rmax,
 		       rate(cur.shots, prev.shots), rate(cur.hitsReported, prev.hitsReported), rate(cur.hitsConfirmed, prev.hitsConfirmed),
 		       rate(cur.deaths, prev.deaths),
-		       cur.corrections, cur.kicks[1], cur.kicks[2], cur.kicks[3], cur.enterFull, cur.connectFail, cur.unexpected, cpu, mem);
+		       cur.corrections, cur.kicks[1], cur.kicks[2], cur.kicks[3], cur.enterFull, cur.connectFail, cur.unexpected,
+		       g_eventLog.Count(EventLog::DISCONNECT), g_eventLog.Count(EventLog::CONNECT_FAIL), g_eventLog.Count(EventLog::ENTER_FAIL), cpu, mem);
 		fflush(stdout);
 	}
 
@@ -326,6 +330,15 @@ int main(int argc, char** argv)
 		if (count < 0) return 0;
 	}
 
+	// ---- 비정상 이벤트 로그 ----
+	{
+		char header[256];
+		snprintf(header, sizeof(header), "server %s:%d, count %d, death_mode %s, fire %s, protocol v%u",
+		         g_cfg.serverIp.c_str(), g_cfg.serverPort, count, g_cfg.reconnectOnDeath ? "reconnect" : "leave", g_cfg.fire ? "on" : "off", GAME_PROTOCOL_VERSION);
+		if (g_eventLog.Open(header)) printf("event log: %s\n", g_eventLog.Path().c_str());
+		else printf("[경고] 로그 파일을 열 수 없음 (logs 폴더 권한 확인)\n");
+	}
+
 	// ---- 시작 ----
 	if (!g_net.Start(g_cfg.ioThreads, g_cfg.serverIp, g_cfg.serverPort, err))
 	{
@@ -361,6 +374,7 @@ int main(int argc, char** argv)
 		{
 			if (TimeDiff(now, lastDraw) >= 5000)
 			{
+				g_eventLog.Flush();
 				Snapshot cur = Take();
 				PrintHeadlessLine(cur, prev, TimeDiff(now, lastDraw) / 1000.0, up, ProcessCpu(), ProcessMemMB());
 				prev = cur;
@@ -402,6 +416,7 @@ int main(int argc, char** argv)
 
 		if (TimeDiff(now, lastDraw) >= 1000)
 		{
+			g_eventLog.Flush();
 			Snapshot cur = Take();
 			DrawDashboard(cur, prev, TimeDiff(now, lastDraw) / 1000.0, up, ProcessCpu(), ProcessMemMB());
 			prev = cur;
@@ -424,6 +439,7 @@ int main(int argc, char** argv)
 		WaitForMultipleObjects((DWORD)g_logicThreads.size(), g_logicThreads.data(), TRUE, 5000);
 	g_net.Stop();
 	timeEndPeriod(1);
+	g_eventLog.Close();
 
 	Snapshot fin = Take();
 	printf("summary: connect %lld (fail %lld), enter ok %lld full %lld other %lld timeout %lld, disconnects %lld (unexpected %lld)\n",
@@ -431,5 +447,7 @@ int main(int argc, char** argv)
 	printf("         shots %lld, hits reported %lld, confirmed %lld, deaths %lld, kills %lld, corrections %lld, kicks %lld/%lld/%lld/%lld\n",
 	       fin.shots, fin.hitsReported, fin.hitsConfirmed, fin.deaths, fin.kills, fin.corrections,
 	       fin.kicks[1], fin.kicks[2], fin.kicks[3], fin.kicks[4]);
+	printf("         abnormal log: disconnect %lld, connect fail %lld, enter fail %lld -> %s\n",
+	       g_eventLog.Count(EventLog::DISCONNECT), g_eventLog.Count(EventLog::CONNECT_FAIL), g_eventLog.Count(EventLog::ENTER_FAIL), g_eventLog.Path().c_str());
 	return 0;
 }

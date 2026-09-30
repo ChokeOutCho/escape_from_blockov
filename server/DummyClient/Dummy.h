@@ -55,6 +55,7 @@ public:
 	void OnConnected(uint32_t now);
 	void OnPacket(const uint8_t* payload, int len, uint32_t now);
 	void OnClosed(uint32_t now, bool intended);
+	void LogConnectFail(const char* reason, int err);     // 소켓 생성 단계 실패 (lock 보유)
 
 	// 퇴장 모드에서 빠진 더미를 다시 활성화 (lock 보유)
 	void ClearRetired() { m_retired = false; }
@@ -72,6 +73,11 @@ public:
 	volatile NetState net = NetState::Idle;
 	int ioCount = 0;
 	bool closeIntended = false;
+	bool closedWhileConnecting = false;
+	const char* closeReason = nullptr;    // 로그용: 첫 종료 원인
+	int closeError = 0;
+	uint8_t lastKick = 0;                 // 마지막으로 받은 SC_KICK 사유
+	uint32_t connectedAt = 0, lastRecvAt = 0;
 	IoCtx connCtx{}, recvCtx{}, sendCtx{};
 	static const int RECV_BUF = 8192;
 	char recvBuf[RECV_BUF];
@@ -89,6 +95,8 @@ private:
 	void FlushHits(uint32_t now);
 	void SendMoveIfNeeded(uint32_t now);
 	void Die(uint32_t now);
+	std::string Name() const;
+	const char* StateName(GameState g) const;
 	uint32_t ServerNow(uint32_t now) const { return now + (uint32_t)m_clockOffset; }
 	float Rand01() { return std::uniform_real_distribution<float>(0.0f, 1.0f)(m_rng); }
 	int RandInt(int lo, int hi) { return std::uniform_int_distribution<int>(lo, hi)(m_rng); }

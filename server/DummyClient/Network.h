@@ -19,7 +19,8 @@ public:
 
 	bool Connect(Dummy* d, uint32_t now);                   // lock 보유
 	void Send(Dummy* d, const char* data, int len);         // lock 보유
-	void Close(Dummy* d, bool intended, uint32_t now);      // lock 보유
+	// reason: 로그용 원인 (정적 문자열), err: Windows/WSA 오류 코드 (0 = 없음). 첫 원인만 기록
+	void Close(Dummy* d, bool intended, uint32_t now, const char* reason, int err = 0);   // lock 보유
 
 private:
 	static unsigned __stdcall WorkerThread(void* arg);

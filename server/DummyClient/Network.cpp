@@ -55,7 +55,7 @@ bool Network::Connect(Dummy* d, uint32_t now)
 	if (d->net != NetState::Idle) return false;
 
 	SOCKET s = WSASocketW(AF_INET, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED);
-	if (s == INVALID_SOCKET) { g_stats.connectFail++; return false; }
+	if (s == INVALID_SOCKET) { g_stats.connectFail++; d->LogConnectFail("WSASocket failed", WSAGetLastError()); return false; }
 
 	sockaddr_in local{};
 	local.sin_family = AF_INET;
@@ -66,14 +66,18 @@ bool Network::Connect(Dummy* d, uint32_t now)
 	if (bind(s, (sockaddr*)&local, sizeof(local)) == SOCKET_ERROR ||
 		CreateIoCompletionPort((HANDLE)s, m_iocp, (ULONG_PTR)d, 0) == nullptr)
 	{
+		int err = WSAGetLastError();
 		closesocket(s);
 		g_stats.connectFail++;
+		d->LogConnectFail("bind/iocp failed", err);
 		return false;
 	}
 
 	d->sock = s;
 	d->net = NetState::Connecting;
 	d->closeIntended = false;
+	d->closeReason = nullptr;
+	d->closeError = 0;
 	d->recvLen = 0;
 	d->sendQ.clear();
 	d->sending = false;
@@ -83,11 +87,12 @@ bool Network::Connect(Dummy* d, uint32_t now)
 	d->ioCount++;
 	if (!m_connectEx(s, (sockaddr*)&m_addr, sizeof(m_addr), nullptr, 0, nullptr, &d->connCtx.ov))
 	{
-		if (WSAGetLastError() != ERROR_IO_PENDING)
+		int err = WSAGetLastError();
+		if (err != ERROR_IO_PENDING)
 		{
 			d->ioCount--;
 			g_stats.connectFail++;
-			Close(d, false, now);
+			Close(d, false, now, "ConnectEx failed", err);
 			return false;
 		}
 	}
@@ -100,7 +105,7 @@ void Network::Send(Dummy* d, const char* data, int len)
 	if (d->sendQ.size() > 256 * 1024)
 	{
 		// 서버가 받지 않고 있음 → 끊는다
-		Close(d, false, NowMs());
+		Close(d, false, NowMs(), "send queue overflow (256KB, server not reading)");
 		return;
 	}
 	d->sendQ.insert(d->sendQ.end(), data, data + len);
@@ -108,9 +113,11 @@ void Network::Send(Dummy* d, const char* data, int len)
 	if (!d->sending) PostSend(d, NowMs());
 }
 
-void Network::Close(Dummy* d, bool intended, uint32_t now)
+void Network::Close(Dummy* d, bool intended, uint32_t now, const char* reason, int err)
 {
 	if (d->net == NetState::Idle || d->net == NetState::Closing) return;
+	d->closedWhileConnecting = (d->net == NetState::Connecting);
+	if (!d->closeReason) { d->closeReason = reason; d->closeError = err; }
 	d->net = NetState::Closing;
 	d->closeIntended = d->closeIntended || intended;
 	if (d->sock != INVALID_SOCKET)
@@ -126,12 +133,12 @@ void Network::Close(Dummy* d, bool intended, uint32_t now)
 void Network::FinishClose(Dummy* d, uint32_t now)
 {
 	d->net = NetState::Idle;
+	g_stats.disconnects++;
+	d->OnClosed(now, d->closeIntended);     // 로그에 남은 송신 큐 크기가 보이도록 정리 전에 호출
 	d->recvLen = 0;
 	d->sendQ.clear();
 	d->sendInflight.clear();
 	d->sending = false;
-	g_stats.disconnects++;
-	d->OnClosed(now, d->closeIntended);
 }
 
 void Network::PostRecv(Dummy* d, uint32_t now)
@@ -146,8 +153,9 @@ void Network::PostRecv(Dummy* d, uint32_t now)
 	if (WSARecv(d->sock, &buf, 1, nullptr, &flags, &d->recvCtx.ov, nullptr) == SOCKET_ERROR &&
 		WSAGetLastError() != WSA_IO_PENDING)
 	{
+		int err = WSAGetLastError();
 		d->ioCount--;
-		Close(d, false, now);
+		Close(d, false, now, "WSARecv failed", err);
 	}
 }
 
@@ -166,9 +174,10 @@ void Network::PostSend(Dummy* d, uint32_t now)
 	if (WSASend(d->sock, &buf, 1, nullptr, 0, &d->sendCtx.ov, nullptr) == SOCKET_ERROR &&
 		WSAGetLastError() != WSA_IO_PENDING)
 	{
+		int err = WSAGetLastError();
 		d->ioCount--;
 		d->sending = false;
-		Close(d, false, now);
+		Close(d, false, now, "WSASend failed", err);
 	}
 }
 
@@ -181,11 +190,12 @@ void Network::ProcessRecv(Dummy* d, uint32_t now)
 		uint16_t len = (uint16_t)(h[1] | (h[2] << 8));
 		if (h[0] != NET_HEADER_CODE || len < 2 || len > NET_MAX_PAYLOAD)
 		{
-			Close(d, false, now);   // 프로토콜 깨짐
+			Close(d, false, now, "protocol error (bad header code/length)");
 			return;
 		}
 		if (d->recvLen - pos < NET_HEADER_SIZE + len) break;
 		g_stats.recvPkts++;
+		d->lastRecvAt = now;
 		d->OnPacket(h + NET_HEADER_SIZE, len, now);
 		pos += NET_HEADER_SIZE + len;
 	}
@@ -210,6 +220,7 @@ void Network::Worker()
 		ULONG_PTR key = 0;
 		OVERLAPPED* ov = nullptr;
 		BOOL ok = GetQueuedCompletionStatus(m_iocp, &bytes, &key, &ov, INFINITE);
+		int ioErr = ok ? 0 : (int)GetLastError();
 		if (key == 0 && ov == nullptr) break;      // Stop()
 		if (ov == nullptr) continue;
 
@@ -225,6 +236,8 @@ void Network::Worker()
 			{
 				setsockopt(d->sock, SOL_SOCKET, SO_UPDATE_CONNECT_CONTEXT, nullptr, 0);
 				d->net = NetState::Connected;
+				d->connectedAt = now;
+				d->lastRecvAt = now;
 				g_stats.connectOk++;
 				d->OnConnected(now);
 				if (d->net == NetState::Connected) PostRecv(d, now);
@@ -232,14 +245,15 @@ void Network::Worker()
 			else
 			{
 				if (d->net == NetState::Connecting) g_stats.connectFail++;
-				Close(d, false, now);
+				Close(d, false, now, "connect failed", ioErr);
 			}
 			break;
 
 		case IO_RECV:
 			if (!ok || bytes == 0 || d->net != NetState::Connected)
 			{
-				Close(d, false, now);
+				if (!ok) Close(d, false, now, "recv error", ioErr);
+				else Close(d, false, now, bytes == 0 ? "server closed connection (FIN)" : "recv after close");
 				break;
 			}
 			g_stats.recvBytes += bytes;
@@ -252,7 +266,7 @@ void Network::Worker()
 			d->sending = false;
 			if (!ok || d->net != NetState::Connected)
 			{
-				Close(d, false, now);
+				Close(d, false, now, ok ? "send after close" : "send error", ioErr);
 				break;
 			}
 			g_stats.sendBytes += bytes;

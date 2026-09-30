@@ -15,6 +15,7 @@
     <ClInclude Include="DummyConfig.h" />
     <ClInclude Include="Dummy.h" />
     <ClInclude Include="Network.h" />
+    <ClInclude Include="EventLog.h" />
     <ClInclude Include="..\GameServer\GameProtocol.h" />
     <ClInclude Include="..\GameServer\ObstacleMap.h" />
   </ItemGroup>
@@ -22,6 +23,7 @@
     <ClCompile Include="main.cpp" />
     <ClCompile Include="Dummy.cpp" />
     <ClCompile Include="Network.cpp" />
+    <ClCompile Include="EventLog.cpp" />
     <ClCompile Include="..\GameServer\ObstacleMap.cpp" />
   </ItemGroup>
   <ItemGroup>
