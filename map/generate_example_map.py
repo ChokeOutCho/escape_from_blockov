@@ -1,12 +1,12 @@
-# 예시 엄폐물 맵 생성기 (4비트 16색 BMP, 6400x6400, 1픽셀 = 1m x 1m)
+# 예시 엄폐물 맵 생성기 (4비트 16색 BMP, 1500x1500, 1픽셀 = 1m x 1m)
 #   검정 = 벽(이동·총알 차단), 회색 = 낮은 엄폐물(이동만 차단), 흰색 = 빈 곳
 #   스폰 지점(server/GameServer/spawns.txt) 주변 반경 16m는 비워 둔다.
 # 사용: python generate_example_map.py [out=obstacles.bmp] [seed=20260930]
 import sys, os, random, struct
 import numpy as np
 
-N = 6400
-SECTOR = 64
+N = 1500      # 월드 크기 (m) = 섹터 50m x 30
+SECTOR = 50
 EMPTY, LOW, WALL = 0, 1, 2
 out = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(__file__), "obstacles.bmp")
 seed = int(sys.argv[2]) if len(sys.argv) > 2 else 20260930
@@ -97,8 +97,10 @@ idx = np.full((N, N), 15, dtype=np.uint8)
 idx[grid == WALL] = 0
 idx[grid == LOW] = 8
 rows = idx[::1]                                   # bottom-up: 파일의 첫 행 = z 0 (맵 남쪽)
-packed = ((rows[:, 0::2] << 4) | rows[:, 1::2]).astype(np.uint8)   # 3200 bytes/row (4바이트 정렬 OK)
-stride = N // 2
+packed = ((rows[:, 0::2] << 4) | rows[:, 1::2]).astype(np.uint8)   # N/2 bytes/row
+stride = ((N * 4 + 31) // 32) * 4                 # 행은 4바이트 정렬 (1500 → 752)
+if stride > packed.shape[1]:
+    packed = np.hstack([packed, np.full((N, stride - packed.shape[1]), 0xFF, dtype=np.uint8)])
 offbits = 14 + 40 + 16 * 4
 with open(out, "wb") as f:
     f.write(b"BM" + struct.pack("<IHHI", offbits + stride * N, 0, 0, offbits))
