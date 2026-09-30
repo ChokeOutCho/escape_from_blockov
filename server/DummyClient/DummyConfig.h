@@ -30,6 +30,13 @@ struct DummyConfig
 	bool fire = true;               // 사격 여부
 	float engageRange = 60.0f;      // 교전 거리 (무기 사거리 - 2 와 작은 값 사용)
 	float sprintChance = 0.3f;      // 배회 중 달리기 비율
+	// 구르기 (game-spec 19.10): 교전 중 쿨타임 후 초당 확률(적의 옆 방향), 배회 중 쿨타임마다 확률(진행 방향)
+	bool roll = true;
+	float rollCombatPerSec = 0.3f;
+	float rollWanderChance = 0.1f;
+	int rollCooldownMs = 3000;      // 서버 roll_cooldown_ms
+	int rollMs = 250;               // 서버 roll_ms
+	float rollSpeedMult = 3.0f;     // 서버 roll_speed_mult
 	std::string namePrefix = "Dummy";   // 이름 = 접두사 + 번호 (12자 이내)
 
 	// 서버와 같은 엄폐물 맵 (없으면 엄폐물 무시하고 이동 → 위치 보정이 늘어난다)
@@ -94,6 +101,12 @@ private:
 		else if (k == "fire") fire = ToBool(v);
 		else if (k == "engage_range") engageRange = fl;
 		else if (k == "sprint_chance") sprintChance = fl;
+		else if (k == "roll") roll = (v == "true" || v == "1");
+		else if (k == "roll_combat_per_sec") rollCombatPerSec = fl;
+		else if (k == "roll_wander_chance") rollWanderChance = fl;
+		else if (k == "roll_cooldown_ms") rollCooldownMs = n;
+		else if (k == "roll_ms") rollMs = n;
+		else if (k == "roll_speed_mult") rollSpeedMult = fl;
 		else if (k == "name_prefix") namePrefix = v;
 		else if (k == "obstacle_map") obstacleMap = v;
 	}

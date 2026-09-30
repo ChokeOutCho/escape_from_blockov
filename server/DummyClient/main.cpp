@@ -98,7 +98,7 @@ namespace
 	////////////////////////////////////////////////////////////////////
 	struct Snapshot
 	{
-		long long sendBytes, recvBytes, sendPkts, recvPkts, shots, hitsReported, hitsConfirmed, deaths, kills, corrections;
+		long long sendBytes, recvBytes, sendPkts, recvPkts, shots, hitsReported, hitsConfirmed, deaths, kills, corrections, rolls;
 		long long connectOk, connectFail, disconnects, unexpected, enterOk, enterFull, enterOther, enterTimeout;
 		long long kicks[5];
 	};
@@ -108,7 +108,7 @@ namespace
 		Snapshot s;
 		s.sendBytes = g_stats.sendBytes; s.recvBytes = g_stats.recvBytes; s.sendPkts = g_stats.sendPkts; s.recvPkts = g_stats.recvPkts;
 		s.shots = g_stats.shots; s.hitsReported = g_stats.hitsReported; s.hitsConfirmed = g_stats.hitsConfirmed;
-		s.deaths = g_stats.deaths; s.kills = g_stats.kills; s.corrections = g_stats.corrections;
+		s.deaths = g_stats.deaths; s.kills = g_stats.kills; s.corrections = g_stats.corrections; s.rolls = g_stats.rolls;
 		s.connectOk = g_stats.connectOk; s.connectFail = g_stats.connectFail; s.disconnects = g_stats.disconnects;
 		s.unexpected = g_stats.unexpectedDisconnects;
 		s.enterOk = g_stats.enterOk; s.enterFull = g_stats.enterFull; s.enterOther = g_stats.enterOther; s.enterTimeout = g_stats.enterTimeout;
@@ -215,9 +215,9 @@ namespace
 		Line(" [송신]    %9.1f KB/s  %8.0f pkt/s", rate(cur.sendBytes, prev.sendBytes) / 1024.0, rate(cur.sendPkts, prev.sendPkts));
 		Line(" [RTT]     평균 %lld ms   최대 %d ms   (최근 1초 표본 %lld)", rc ? rs / rc : 0, rmax, rc);
 		Line("");
-		Line(" [전투]    사격 %.0f/s   명중보고 %.0f/s   명중확인 %.0f/s   사망 %.0f/s   킬 %.0f/s",
+		Line(" [전투]    사격 %.0f/s   명중보고 %.0f/s   명중확인 %.0f/s   사망 %.0f/s   킬 %.0f/s   구르기 %.0f/s",
 		     rate(cur.shots, prev.shots), rate(cur.hitsReported, prev.hitsReported), rate(cur.hitsConfirmed, prev.hitsConfirmed),
-		     rate(cur.deaths, prev.deaths), rate(cur.kills, prev.kills));
+		     rate(cur.deaths, prev.deaths), rate(cur.kills, prev.kills), rate(cur.rolls, prev.rolls));
 		Line("           누적 사격 %lld  명중보고 %lld  명중확인 %lld  사망 %lld",
 		     cur.shots, cur.hitsReported, cur.hitsConfirmed, cur.deaths);
 		Line(" [검증]    위치보정 %.0f/s (누적 %lld)   킥: 타임아웃 %lld  잘못된패킷 %lld  치트의심 %lld  서버종료 %lld",
@@ -238,13 +238,13 @@ namespace
 		int rmax = g_stats.rttMax.exchange(0);
 		auto rate = [&](long long a, long long b) { return (double)(a - b) / sec; };
 		printf("[%4us] game %d enter %d dead %d conn %d idle %d | recv %.0fKB/s %.0fpkt/s send %.0fKB/s %.0fpkt/s | rtt avg %lld max %d | "
-		       "shot %.0f/s hit %.0f/s confirm %.0f/s death %.0f/s | corr %lld kick %lld/%lld/%lld | full %lld fail %lld unexp %lld | log %lld/%lld/%lld | cpu %.1f%% mem %.0fMB\n",
+		       "shot %.0f/s hit %.0f/s confirm %.0f/s death %.0f/s roll %.0f/s | corr %lld kick %lld/%lld/%lld | full %lld fail %lld unexp %lld | log %lld/%lld/%lld | cpu %.1f%% mem %.0fMB\n",
 		       uptimeSec, st.inGame, st.entering, st.dead, st.connecting, st.idle,
 		       rate(cur.recvBytes, prev.recvBytes) / 1024.0, rate(cur.recvPkts, prev.recvPkts),
 		       rate(cur.sendBytes, prev.sendBytes) / 1024.0, rate(cur.sendPkts, prev.sendPkts),
 		       rc ? rs / rc : 0, rmax,
 		       rate(cur.shots, prev.shots), rate(cur.hitsReported, prev.hitsReported), rate(cur.hitsConfirmed, prev.hitsConfirmed),
-		       rate(cur.deaths, prev.deaths),
+		       rate(cur.deaths, prev.deaths), rate(cur.rolls, prev.rolls),
 		       cur.corrections, cur.kicks[1], cur.kicks[2], cur.kicks[3], cur.enterFull, cur.connectFail, cur.unexpected,
 		       g_eventLog.Count(EventLog::DISCONNECT), g_eventLog.Count(EventLog::CONNECT_FAIL), g_eventLog.Count(EventLog::ENTER_FAIL), cpu, mem);
 		fflush(stdout);
@@ -444,8 +444,8 @@ int main(int argc, char** argv)
 	Snapshot fin = Take();
 	printf("summary: connect %lld (fail %lld), enter ok %lld full %lld other %lld timeout %lld, disconnects %lld (unexpected %lld)\n",
 	       fin.connectOk, fin.connectFail, fin.enterOk, fin.enterFull, fin.enterOther, fin.enterTimeout, fin.disconnects, fin.unexpected);
-	printf("         shots %lld, hits reported %lld, confirmed %lld, deaths %lld, kills %lld, corrections %lld, kicks %lld/%lld/%lld/%lld\n",
-	       fin.shots, fin.hitsReported, fin.hitsConfirmed, fin.deaths, fin.kills, fin.corrections,
+	printf("         shots %lld, hits reported %lld, confirmed %lld, deaths %lld, kills %lld, rolls %lld, corrections %lld, kicks %lld/%lld/%lld/%lld\n",
+	       fin.shots, fin.hitsReported, fin.hitsConfirmed, fin.deaths, fin.kills, fin.rolls, fin.corrections,
 	       fin.kicks[1], fin.kicks[2], fin.kicks[3], fin.kicks[4]);
 	printf("         abnormal log: disconnect %lld, connect fail %lld, enter fail %lld -> %s\n",
 	       g_eventLog.Count(EventLog::DISCONNECT), g_eventLog.Count(EventLog::CONNECT_FAIL), g_eventLog.Count(EventLog::ENTER_FAIL), g_eventLog.Path().c_str());

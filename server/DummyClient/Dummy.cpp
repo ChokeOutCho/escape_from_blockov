@@ -227,6 +227,9 @@ void Dummy::OnPacket(const uint8_t* payload, int len, uint32_t now)
 		m_hits.clear();
 		m_targetId = 0;
 		m_haveWeapon = false;
+		m_rolling = false;
+		m_rollReadyAt = now + 1000;
+		m_nextWanderRollCheck = now + 1000;
 		return;
 	}
 	case PT_SC_WEAPON_DEFS:
@@ -238,7 +241,7 @@ void Dummy::OnPacket(const uint8_t* payload, int len, uint32_t now)
 			w.id = r.U8(); w.damage = r.U16(); w.range = r.F(); w.speed = r.F();
 			w.intervalMs = r.U16(); w.radius = r.F();
 			r.U16(); r.U16(); r.F(); r.U8(); r.U8();   // magazine, reload, spread, pellets, pierce
-			r.Skip(3);
+			r.F(); r.U16(); r.U8(); r.Skip(2);         // v6: jitterDeg, durability, slot, reserved (36B)
 			if (r.Ok() && w.id == m_weaponId && w.speed > 0) { m_weapon = w; m_haveWeapon = true; }
 		}
 		return;
@@ -269,6 +272,19 @@ void Dummy::OnPacket(const uint8_t* payload, int len, uint32_t now)
 		}
 		return;
 	}
+	case PT_SC_ROLL:
+	{
+		// 대상이 굴렀다: 도착점으로 옮기고, 그 대상에 대한 미보고 명중은 버린다 (되감기 검증에서 빗나감 → 부정 카운트 방지)
+		uint32_t id = r.U32();
+		r.F(); r.F();
+		RemotePlayer p;
+		p.x = r.F(); p.z = r.F(); p.vx = 0; p.vz = 0;
+		p.t = now + 250;
+		if (!r.Ok() || id == m_myId) return;
+		m_remotes[id] = p;
+		m_hits.erase(std::remove_if(m_hits.begin(), m_hits.end(), [id](const PendingHit& h) { return h.targetId == id; }), m_hits.end());
+		return;
+	}
 	case PT_SC_MOVE:
 	{
 		uint32_t id = r.U32();
@@ -282,6 +298,7 @@ void Dummy::OnPacket(const uint8_t* payload, int len, uint32_t now)
 	{
 		m_x = r.F(); m_z = r.F();
 		m_vx = m_vz = 0;
+		m_rolling = false;
 		m_nextTurn = now;
 		m_forceMove = true;
 		g_stats.corrections++;
@@ -363,6 +380,9 @@ void Dummy::GameTick(uint32_t now)
 
 	FlushHits(now);
 
+	// 구르는 중: 위치만 보간, 이동 패킷·사격 없음
+	if (UpdateRoll(now)) return;
+
 	bool canFire = g_fireEnabled.load(std::memory_order_relaxed) && m_haveWeapon;
 	if (canFire && TimeDiff(now, m_nextTargetScan) >= 0)
 	{
@@ -388,8 +408,15 @@ void Dummy::GameTick(uint32_t now)
 		else
 		{
 			m_aim = ToAim(dx, dz);
+			// 교전 중 구르기: 쿨타임이 지나면 초당 roll_combat_per_sec 확률로 적의 옆 방향
+			if (g_cfg.roll && TimeDiff(now, m_rollReadyAt) >= 0 && Rand01() < g_cfg.rollCombatPerSec * dt)
+			{
+				float side = Rand01() < 0.5f ? 1.0f : -1.0f;
+				if (TryRoll(now, -dz / dist * side, dx / dist * side)) return;
+			}
 			SendMoveIfNeeded(now);      // 정지·조준을 먼저 알린 뒤 사격 (서버 원점 검사)
-			if (TimeDiff(now, m_nextFire) >= 0) Fire(now, tx, tz, t.vx, t.vz);
+			// 대상이 구르는 중이면(SC_ROLL 후 0.25초) 쏘지 않는다: 되감기 위치가 경로 중간이라 명중 보고가 거부됨
+			if (TimeDiff(now, m_nextFire) >= 0 && TimeDiff(now, t.t) >= 0) Fire(now, tx, tz, t.vx, t.vz);
 			return;
 		}
 	}
@@ -399,7 +426,68 @@ void Dummy::GameTick(uint32_t now)
 	}
 
 	Wander(now, dt);
+	// 배회 중 구르기: 쿨타임마다 roll_wander_chance 확률로 진행 방향
+	if (g_cfg.roll && (m_vx != 0 || m_vz != 0) && TimeDiff(now, m_rollReadyAt) >= 0 && TimeDiff(now, m_nextWanderRollCheck) >= 0)
+	{
+		m_nextWanderRollCheck = now + (uint32_t)g_cfg.rollCooldownMs;
+		if (Rand01() < g_cfg.rollWanderChance)
+		{
+			float sp = sqrtf(m_vx * m_vx + m_vz * m_vz);
+			SendMoveIfNeeded(now);
+			if (TryRoll(now, m_vx / sp, m_vz / sp)) return;
+		}
+	}
 	SendMoveIfNeeded(now);
+}
+
+// 서버 HandleRoll과 같은 계산: 0.25m 단위 직진, 엄폐물(반지름 그대로)에 닿으면 그 앞에서 멈춤
+bool Dummy::TryRoll(uint32_t now, float dx, float dz)
+{
+	float len = sqrtf(dx * dx + dz * dz);
+	if (len < 0.5f) return false;
+	dx /= len; dz /= len;
+	float dist = m_moveSpeed * g_cfg.rollSpeedMult * (float)g_cfg.rollMs / 1000.0f;
+	int steps = std::max(1, (int)ceilf(dist / 0.25f));
+	float stepLen = dist / (float)steps;
+	float cx = m_x, cz = m_z;
+	for (int i = 0; i < steps; i++)
+	{
+		float nx = std::clamp(cx + dx * stepLen, MapConst::MinPos, MapConst::MaxPos);
+		float nz = std::clamp(cz + dz * stepLen, MapConst::MinPos, MapConst::MaxPos);
+		if (g_map.CircleBlocked(nx, nz, m_radius)) break;
+		cx = nx; cz = nz;
+	}
+	if ((cx - m_x) * (cx - m_x) + (cz - m_z) * (cz - m_z) < 1.0f) return false;     // 벽 바로 앞 → 굴러도 의미 없음
+
+	PacketWriter w(PT_CS_ROLL);
+	w.WF(m_x); w.WF(m_z); w.WF(dx); w.WF(dz);
+	Send(w);
+	g_stats.rolls++;
+	m_rolling = true;
+	m_rollStart = now;
+	m_rollReadyAt = now + (uint32_t)g_cfg.rollCooldownMs + 100;     // 서버 도착 편차 여유
+	m_rollFromX = m_x; m_rollFromZ = m_z;
+	m_rollToX = cx; m_rollToZ = cz;
+	m_aim = ToAim(dx, dz);
+	return true;
+}
+
+// 구르는 중이면 위치 보간 후 true. 끝나면 도착점에서 이동 패킷을 다시 보내도록 표시
+bool Dummy::UpdateRoll(uint32_t now)
+{
+	if (!m_rolling) return false;
+	float k = (float)TimeDiff(now, m_rollStart) / (float)g_cfg.rollMs;
+	if (k >= 1.0f)
+	{
+		m_rolling = false;
+		m_x = m_rollToX; m_z = m_rollToZ;
+		m_forceMove = true;
+		return false;
+	}
+	if (k < 0) k = 0;
+	m_x = m_rollFromX + (m_rollToX - m_rollFromX) * k;
+	m_z = m_rollFromZ + (m_rollToZ - m_rollFromZ) * k;
+	return true;
 }
 
 void Dummy::SelectTarget(uint32_t now)

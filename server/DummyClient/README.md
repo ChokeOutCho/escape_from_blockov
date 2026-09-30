@@ -39,8 +39,10 @@ MSBuild DummyClient.sln /p:Configuration=Release /p:Platform=x64
 3. **교전**: 시야(3x3 섹터) 안의 플레이어 중 교전 거리 이내이고 벽에 가리지 않은 가장 가까운 대상 → 멈추고 조준, 연사 간격 x1.1로 사격
    - 대상 속도로 탄 도착 위치를 예측(리드)해 쏘고, 탄 비행 시간 뒤 그 위치를 `CS_HIT_REPORT`로 보고 → 서버의 오토타게팅 되감기 검증을 그대로 거친다
    - `ViewTime` = 추정 서버 시각 - 편도 지연
-4. **사망**: 재접속 모드면 `reconnect_delay_ms` 뒤 다시 입장, 퇴장 모드면 빠진다
-5. 대상에는 사람 플레이어와 다른 더미가 모두 포함된다
+4. **구르기** (프로토콜 v6, game-spec 19.10): 교전 중 쿨타임(3초)이 지나면 초당 30% 확률로 적의 옆 방향, 배회 중 쿨타임마다 10% 확률로 진행 방향으로 `CS_ROLL`. 도착점은 서버와 같은 계산(0.25m 단위, 엄폐물 앞 정지)이라 보정이 나지 않아야 한다. 붕대·아이템 획득·특수 총은 쓰지 않는다(권총만)
+5. **사망**: 재접속 모드면 `reconnect_delay_ms` 뒤 다시 입장, 퇴장 모드면 빠진다
+6. 대상에는 사람 플레이어와 다른 더미가 모두 포함된다
+7. v6의 새 패킷(인벤토리·가방·에어드랍·체력 등)은 받기만 하고 무시한다
 
 ## 설정 (`dummy_config.txt`)
 
@@ -58,6 +60,10 @@ MSBuild DummyClient.sln /p:Configuration=Release /p:Platform=x64
 | engage_range | 60 | 교전 거리 (무기 사거리-2 와 작은 값) |
 | sprint_chance | 0.3 | 배회 중 달리기 비율 |
 | name_prefix | Dummy | 이름 접두사 (번호 포함 12자 이내) |
+| roll | true | 구르기 사용 |
+| roll_combat_per_sec | 0.3 | 교전 중 쿨타임 후 초당 구르기 확률 (적의 옆 방향) |
+| roll_wander_chance | 0.1 | 배회 중 쿨타임마다 구르기 확률 (진행 방향) |
+| roll_cooldown_ms / roll_ms / roll_speed_mult | 3000 / 250 / 3.0 | 서버 `game_config.txt`와 같게 |
 | obstacle_map | ../../map/obstacles.bmp | 서버와 같은 엄폐물 맵 |
 
 ## 비정상 이벤트 로그 (`logs/dummy_YYYYMMDD_HHMMSS.log`)
@@ -106,7 +112,7 @@ cd server\GameServer\test\stress
 | 접속 / 입장 | 누적 접속 성공·실패, 끊김(비정상 = 게임 중 서버가 끊음), 입장 OK·FULL·거부·타임아웃 |
 | 수신 / 송신 | 전체 KB/s, pkt/s |
 | RTT | 최근 1초 핑 평균·최대 (서버 Content 틱 대기 포함) |
-| 전투 | 초당 사격·명중 보고·명중 확인(SC_DAMAGE)·사망·킬 |
+| 전투 | 초당 사격·명중 보고·명중 확인(SC_DAMAGE)·사망·킬·구르기 |
 | 검증 | 위치 보정(SC_POSITION_CORRECT), 킥 사유별 누적 — 0이 아니면 더미 로직 또는 서버 검증 문제 |
 | 클라 | 더미 프로세스 CPU·메모리 (클라가 병목인지 확인) |
 

@@ -37,7 +37,7 @@ struct Stats
 	std::atomic<long long> enterOk{ 0 }, enterFull{ 0 }, enterOther{ 0 }, enterTimeout{ 0 };
 	std::atomic<long long> corrections{ 0 };
 	std::atomic<long long> kicks[5]{};          // [1]타임아웃 [2]잘못된 패킷 [3]치트 의심 [4]서버 종료
-	std::atomic<long long> shots{ 0 }, hitsReported{ 0 }, hitsConfirmed{ 0 }, deaths{ 0 }, kills{ 0 };
+	std::atomic<long long> shots{ 0 }, hitsReported{ 0 }, hitsConfirmed{ 0 }, deaths{ 0 }, kills{ 0 }, rolls{ 0 };
 	std::atomic<long long> rttSum{ 0 }, rttCount{ 0 };
 	std::atomic<int> rttMax{ 0 };
 

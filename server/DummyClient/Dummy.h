@@ -95,6 +95,8 @@ private:
 	void FlushHits(uint32_t now);
 	void SendMoveIfNeeded(uint32_t now);
 	void Die(uint32_t now);
+	bool TryRoll(uint32_t now, float dx, float dz);
+	bool UpdateRoll(uint32_t now);
 	std::string Name() const;
 	const char* StateName(GameState g) const;
 	uint32_t ServerNow(uint32_t now) const { return now + (uint32_t)m_clockOffset; }
@@ -123,6 +125,11 @@ private:
 	int m_pingsSent = 0;
 	float m_lastSentVx = 0, m_lastSentVz = 0, m_lastSentAim = 0;
 	bool m_forceMove = false;
+
+	// 구르기 (game-spec 19.3, 19.10)
+	bool m_rolling = false;
+	uint32_t m_rollStart = 0, m_rollReadyAt = 0, m_nextWanderRollCheck = 0;
+	float m_rollFromX = 0, m_rollFromZ = 0, m_rollToX = 0, m_rollToZ = 0;
 
 	// 시각 동기화 (서버 시각 = 로컬 + offset)
 	int32_t m_clockOffset = 0;
