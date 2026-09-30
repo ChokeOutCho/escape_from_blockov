@@ -141,6 +141,30 @@ namespace Blockov.Game
 
         public static WeaponDef MyWeapon => Weapons.TryGetValue(WeaponId, out var w) ? w : null;
 
+        ////////////////////////////////////////////////////////////////
+        // 지도 좌표 (game-spec 20.4): 열 A..Z, AA..AD (sx), 행 1..30 (위쪽 = 북 = z 큰 쪽이 1)
+        ////////////////////////////////////////////////////////////////
+        public static int SectorCount => SectorGrid.DefaultSectorCount;
+
+        public static string SectorColumn(int sx)
+        {
+            string s = "";
+            int n = sx + 1;
+            while (n > 0) { int m = (n - 1) % 26; s = (char)('A' + m) + s; n = (n - 1) / 26; }
+            return s;
+        }
+
+        public static int SectorRow(int sy) => SectorCount - sy;
+
+        public static string SectorLabel(int sx, int sy) => SectorColumn(sx) + SectorRow(sy);
+
+        public static string SectorLabelAt(UnityEngine.Vector2 worldXZ)
+        {
+            int sx = UnityEngine.Mathf.Clamp(UnityEngine.Mathf.FloorToInt(worldXZ.x / SectorGrid.DefaultSectorSize), 0, SectorCount - 1);
+            int sy = UnityEngine.Mathf.Clamp(UnityEngine.Mathf.FloorToInt(worldXZ.y / SectorGrid.DefaultSectorSize), 0, SectorCount - 1);
+            return SectorLabel(sx, sy);
+        }
+
         public static string WeaponName(byte id)
         {
             switch (id)

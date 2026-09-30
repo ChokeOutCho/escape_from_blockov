@@ -137,7 +137,7 @@ namespace Blockov.Game
             var net = NetworkManager.Instance;
             string clock = net != null ? $"offset {net.Clock.OffsetMs:0}ms" : "";
             GUI.Label(new Rect(0, Screen.height - UiKit.Px(24), Screen.width - UiKit.Px(10), UiKit.Px(20)),
-                $"({p.x:0.0}, {p.y:0.0})  sector ({Mathf.FloorToInt(p.x / SectorGrid.DefaultSectorSize)},{Mathf.FloorToInt(p.y / SectorGrid.DefaultSectorSize)})  {clock}  zoom {(_gc.Rig ? _gc.Rig.Zoom : 0):0}", dbg);
+                $"({p.x:0.0}, {p.y:0.0})  섹터 {GameSession.SectorLabelAt(p)}  {clock}  zoom {(_gc.Rig ? _gc.Rig.Zoom : 0):0}", dbg);
         }
 
         void DrawHitMarker()
@@ -265,7 +265,7 @@ namespace Blockov.Game
         ////////////////////////////////////////////////////////////////
         void DrawControls()
         {
-            bool W = false, A = false, S = false, D = false, shift = false, space = false, k1 = false, k2 = false, k3 = false, f = false, m = false;
+            bool W = false, A = false, S = false, D = false, shift = false, space = false, k1 = false, k2 = false, k3 = false, f = false, m = false, lb = false, rb = false;
             bool lmb = false, moved = false, wheel = false;
 #if ENABLE_INPUT_SYSTEM
             var kb = UnityEngine.InputSystem.Keyboard.current;
@@ -274,7 +274,7 @@ namespace Blockov.Game
                 W = kb.wKey.isPressed; A = kb.aKey.isPressed; S = kb.sKey.isPressed; D = kb.dKey.isPressed;
                 shift = kb.shiftKey.isPressed; space = kb.spaceKey.isPressed;
                 k1 = kb.digit1Key.isPressed; k2 = kb.digit2Key.isPressed; k3 = kb.digit3Key.isPressed;
-                f = kb.fKey.isPressed; m = kb.mKey.isPressed;
+                f = kb.fKey.isPressed; m = kb.mKey.isPressed; lb = kb.leftBracketKey.isPressed; rb = kb.rightBracketKey.isPressed;
             }
             var mouse = UnityEngine.InputSystem.Mouse.current;
             if (mouse != null)
@@ -285,7 +285,7 @@ namespace Blockov.Game
             }
 #endif
             float k = UiKit.Px(34), g = UiKit.Px(4);
-            float pw = UiKit.Px(440), ph = UiKit.Px(150);
+            float pw = UiKit.Px(480), ph = UiKit.Px(150);
             var p = new Rect(Screen.width - pw - UiKit.Px(12), Screen.height - ph - UiKit.Px(32), pw, ph);
             UiKit.Panel(p, 0.35f);
             var cap = UiKit.Sized(UiKit.LabelCenter, 11);
@@ -321,8 +321,11 @@ namespace Blockov.Game
             float y2 = y + k + g + UiKit.Px(14);
             Key(new Rect(x2, y2, k, k), "F", f);
             Caption(new Rect(x2 - UiKit.Px(6), y2 + k + 1, k + UiKit.Px(12), UiKit.Px(14)), "열기", cap);
-            Key(new Rect(x2 + (k + g) * 2, y2, k, k), "M", m);
-            Caption(new Rect(x2 + (k + g) * 2 - UiKit.Px(6), y2 + k + 1, k + UiKit.Px(12), UiKit.Px(14)), "지도", cap);
+            Key(new Rect(x2 + (k + g), y2, k, k), "M", m);
+            Caption(new Rect(x2 + (k + g) - UiKit.Px(6), y2 + k + 1, k + UiKit.Px(12), UiKit.Px(14)), "지도", cap);
+            Key(new Rect(x2 + (k + g) * 2, y2, k, k), "[", lb);
+            Key(new Rect(x2 + (k + g) * 3, y2, k, k), "]", rb);
+            Caption(new Rect(x2 + (k + g) * 2, y2 + k + 1, k * 2 + g, UiKit.Px(14)), "줌 인/아웃", cap);
 
             // 마우스 그림
             float mx = p.xMax - UiKit.Px(150), my = p.y + UiKit.Px(10);
@@ -342,7 +345,7 @@ namespace Blockov.Game
             var lab = UiKit.Sized(UiKit.Label, 12);
             float lx = mx + mw + UiKit.Px(8);
             GUI.Label(new Rect(lx, my, UiKit.Px(90), UiKit.Px(18)), "<color=#f08060>좌클릭</color> 사격", lab);
-            GUI.Label(new Rect(lx, my + UiKit.Px(20), UiKit.Px(90), UiKit.Px(18)), "<color=#66ccff>휠</color> 줌", lab);
+            GUI.Label(new Rect(lx, my + UiKit.Px(20), UiKit.Px(90), UiKit.Px(18)), "<color=#66ccff>휠</color> 지도 줌", lab);
             GUI.Label(new Rect(lx, my + UiKit.Px(40), UiKit.Px(90), UiKit.Px(18)), "움직여 조준", lab);
         }
 
@@ -402,7 +405,7 @@ namespace Blockov.Game
             s_lootRect = r;
             UiKit.Panel(r, 0.82f);
             Border(r, UiKit.Px(2), info.Type == ContainerManager.TypeAirdrop ? new Color(0.35f, 0.6f, 1f) : new Color(0.7f, 0.5f, 0.3f));
-            string title = info.Type == ContainerManager.TypeAirdrop ? $"에어드랍  <color=#aaaaaa>섹터 ({info.SectorX},{info.SectorY})</color>" : "가방";
+            string title = info.Type == ContainerManager.TypeAirdrop ? $"에어드랍  <color=#aaaaaa>섹터 {GameSession.SectorLabel(info.SectorX, info.SectorY)}</color>" : "가방";
             GUI.Label(new Rect(r.x + UiKit.Px(14), r.y + UiKit.Px(8), w, UiKit.Px(30)), $"<b>{title}</b>", UiKit.Sized(UiKit.Label, 20));
             if (GUI.Button(new Rect(r.xMax - UiKit.Px(40), r.y + UiKit.Px(8), UiKit.Px(30), UiKit.Px(28)), "X", UiKit.Sized(UiKit.Button, 16)))
                 cm.CloseLoot();
@@ -443,38 +446,146 @@ namespace Blockov.Game
         }
 
         ////////////////////////////////////////////////////////////////
-        // 전체 맵 (M): 섹터 번호(반투명), 나, 카메라 범위, 에어드랍. 적은 표시하지 않음 (19.8)
+        // 전체 맵 (M): 지도 좌표(가장자리 A~AD / 1~30), 나, 카메라 범위, 에어드랍. 적은 표시하지 않음 (19.8, 20.3~20.4)
+        //  휠 = 1~8배 줌(마우스 지점 고정), 좌클릭 드래그 = 이동. 열 때마다 1배·내 위치 기준
         ////////////////////////////////////////////////////////////////
+        const float MapMaxZoom = 8f;
         Texture2D _minimap;
-        GUIStyle _sectorStyle;
-        int _sectorStyleSize = -1;
+        GUIStyle _edgeStyle, _cellStyle;
+        int _edgeStyleSize = -1, _cellStyleSize = -1;
+        float _mapZoom = 1f;
+        Vector2 _mapCenter;
+        Rect _mapRect;
+        bool _mapWasOpen, _mapDragging;
+
+        float MapViewSize => ObstacleMap.Size / _mapZoom;
+
+        void ClampMapCenter()
+        {
+            float half = MapViewSize * 0.5f;
+            _mapCenter.x = Mathf.Clamp(_mapCenter.x, half, ObstacleMap.Size - half);
+            _mapCenter.y = Mathf.Clamp(_mapCenter.y, half, ObstacleMap.Size - half);
+        }
+
+        // Input System 화면 좌표(아래가 0) → 월드 (x, z)
+        Vector2 MapScreenToWorld(Vector2 screen)
+        {
+            var gui = new Vector2(screen.x, Screen.height - screen.y);
+            float v = MapViewSize;
+            float minX = _mapCenter.x - v * 0.5f, minZ = _mapCenter.y - v * 0.5f;
+            return new Vector2(minX + (gui.x - _mapRect.x) / _mapRect.width * v, minZ + (_mapRect.yMax - gui.y) / _mapRect.height * v);
+        }
+
+        void Update()
+        {
+            if (_gc == null || !_gc.ShowMinimap || _gc.LocalView == null) { _mapWasOpen = false; _mapDragging = false; return; }
+            if (!_mapWasOpen)
+            {
+                _mapWasOpen = true;
+                _mapZoom = 1f;
+                _mapCenter = _gc.LocalView.PosXZ;
+                ClampMapCenter();
+            }
+#if ENABLE_INPUT_SYSTEM
+            var mouse = UnityEngine.InputSystem.Mouse.current;
+            if (mouse == null || _mapRect.width <= 0) return;
+            var mp = mouse.position.ReadValue();
+            var gui = new Vector2(mp.x, Screen.height - mp.y);
+            bool inside = _mapRect.Contains(gui);
+
+            float scroll = mouse.scroll.ReadValue().y;
+            if (inside && Mathf.Abs(scroll) > 0.01f)
+            {
+                Vector2 before = MapScreenToWorld(mp);
+                _mapZoom = Mathf.Clamp(_mapZoom * (scroll > 0 ? 1.25f : 0.8f), 1f, MapMaxZoom);
+                // 마우스가 가리키던 지점이 그대로 마우스 아래에 오도록
+                float v = MapViewSize;
+                float fx = (gui.x - _mapRect.x) / _mapRect.width, fz = (_mapRect.yMax - gui.y) / _mapRect.height;
+                _mapCenter = new Vector2(before.x - (fx - 0.5f) * v, before.y - (fz - 0.5f) * v);
+                ClampMapCenter();
+            }
+
+            if (mouse.leftButton.wasPressedThisFrame && inside) _mapDragging = true;
+            if (!mouse.leftButton.isPressed) _mapDragging = false;
+            if (_mapDragging)
+            {
+                var d = mouse.delta.ReadValue();
+                float k = MapViewSize / _mapRect.width;
+                _mapCenter -= new Vector2(d.x * k, d.y * k);
+                ClampMapCenter();
+            }
+#endif
+        }
 
         void DrawMinimap(Camera cam)
         {
-            if (_minimap == null) _minimap = ObstacleMap.BuildMinimap(800);
-            float size = Mathf.Min(Screen.width, Screen.height) * 0.86f;
-            var r = new Rect((Screen.width - size) / 2, (Screen.height - size) / 2 + UiKit.Px(10), size, size);
-            UiKit.Rect(new Rect(r.x - 4, r.y - UiKit.Px(34), r.width + 8, r.height + UiKit.Px(38)), new Color(0, 0, 0, 0.75f));
-            GUI.Label(new Rect(r.x, r.y - UiKit.Px(32), r.width, UiKit.Px(28)),
-                $"<b>전체 맵</b>  <color=#aaaaaa>(M 닫기 · 섹터 {SectorGrid.DefaultSectorSize}m 번호 x,y · 검정 벽 / 황토 낮은 엄폐물 · 파랑 에어드랍)</color>", UiKit.Sized(UiKit.Label, 16));
-            GUI.DrawTexture(r, _minimap, ScaleMode.StretchToFill, false);
+            if (_minimap == null) _minimap = ObstacleMap.BuildMinimap(Mathf.RoundToInt(ObstacleMap.Size));   // 1px = 1m
+            if (!_mapWasOpen) { _mapZoom = 1f; _mapCenter = _gc.LocalView.PosXZ; ClampMapCenter(); }
+            float band = UiKit.Px(22);
+            float size = Mathf.Min(Screen.width, Screen.height) * 0.8f;
+            var r = new Rect((Screen.width - size) / 2, (Screen.height - size) / 2 + UiKit.Px(16), size, size);
+            _mapRect = r;
+            UiKit.Rect(new Rect(r.x - band - 6, r.y - band - UiKit.Px(36), r.width + band * 2 + 12, r.height + band * 2 + UiKit.Px(42)), new Color(0, 0, 0, 0.8f));
+            GUI.Label(new Rect(r.x - band, r.y - band - UiKit.Px(34), r.width + band * 2, UiKit.Px(28)),
+                $"<b>전체 맵</b>  <color=#aaaaaa>(M 닫기 · 휠 줌 x{_mapZoom:0.0} · 드래그 이동 · 한 칸 {SectorGrid.DefaultSectorSize}m · 파랑 에어드랍)</color>", UiKit.Sized(UiKit.Label, 16));
 
-            Vector2 ToScreen(Vector2 w) => new Vector2(r.x + w.x / ObstacleMap.Size * r.width, r.yMax - w.y / ObstacleMap.Size * r.height);
+            float v = MapViewSize;
+            float minX = _mapCenter.x - v * 0.5f, minZ = _mapCenter.y - v * 0.5f;
+            float S = ObstacleMap.Size;
+            GUI.DrawTextureWithTexCoords(r, _minimap, new Rect(minX / S, minZ / S, v / S, v / S), false);
 
-            // 섹터 번호 (반투명)
-            int count = Mathf.RoundToInt(ObstacleMap.Size / SectorGrid.DefaultSectorSize);
-            float cell = r.width / count;
-            int fs = Mathf.Clamp(Mathf.RoundToInt(cell * 0.3f), 6, 20);
-            if (_sectorStyle == null || _sectorStyleSize != fs)
+            Vector2 ToScreen(Vector2 w) => new Vector2(r.x + (w.x - minX) / v * r.width, r.yMax - (w.y - minZ) / v * r.height);
+            bool Visible(Vector2 p) => p.x >= r.x - 2 && p.x <= r.xMax + 2 && p.y >= r.y - 2 && p.y <= r.yMax + 2;
+
+            // 지도 좌표: 위·아래 열 문자, 왼쪽·오른쪽 행 번호 (20.4)
+            float sec = SectorGrid.DefaultSectorSize;
+            int count = GameSession.SectorCount;
+            float cell = sec / v * r.width;
+            int efs = Mathf.Clamp(Mathf.RoundToInt(Mathf.Min(cell * 0.45f, band * 0.7f)), 7, 16);
+            if (_edgeStyle == null || _edgeStyleSize != efs)
             {
-                _sectorStyle = new GUIStyle(UiKit.LabelCenter) { fontSize = fs, richText = false, clipping = TextClipping.Overflow };
-                _sectorStyle.normal.textColor = new Color(1f, 1f, 1f, 0.28f);
-                _sectorStyleSize = fs;
+                _edgeStyle = new GUIStyle(UiKit.LabelCenter) { fontSize = efs, richText = false, clipping = TextClipping.Overflow };
+                _edgeStyle.normal.textColor = new Color(0.9f, 0.9f, 0.8f, 0.9f);
+                _edgeStyleSize = efs;
+            }
+            int cfs = Mathf.Clamp(Mathf.RoundToInt(cell * 0.18f), 8, 28);
+            if (_cellStyle == null || _cellStyleSize != cfs)
+            {
+                _cellStyle = new GUIStyle(UiKit.LabelCenter) { fontSize = cfs, richText = false, clipping = TextClipping.Overflow };
+                _cellStyle.normal.textColor = new Color(1f, 1f, 1f, 0.22f);
+                _cellStyleSize = cfs;
             }
             if (Event.current.type == EventType.Repaint)
+            {
+                for (int sx = 0; sx < count; sx++)
+                {
+                    float cx = ToScreen(new Vector2((sx + 0.5f) * sec, 0)).x;
+                    if (cx < r.x || cx > r.xMax) continue;
+                    string col = GameSession.SectorColumn(sx);
+                    GUI.Label(new Rect(cx - cell / 2, r.y - band, cell, band), col, _edgeStyle);
+                    GUI.Label(new Rect(cx - cell / 2, r.yMax, cell, band), col, _edgeStyle);
+                }
                 for (int sy = 0; sy < count; sy++)
-                    for (int sx = 0; sx < count; sx++)
-                        GUI.Label(new Rect(r.x + sx * cell, r.yMax - (sy + 1) * cell, cell, cell), $"{sx},{sy}", _sectorStyle);
+                {
+                    float cy = ToScreen(new Vector2(0, (sy + 0.5f) * sec)).y;
+                    if (cy < r.y || cy > r.yMax) continue;
+                    string row = GameSession.SectorRow(sy).ToString();
+                    GUI.Label(new Rect(r.x - band, cy - cell / 2, band, cell), row, _edgeStyle);
+                    GUI.Label(new Rect(r.xMax, cy - cell / 2, band, cell), row, _edgeStyle);
+                }
+                // 줌인해 칸이 충분히 크면 칸 안에 흐린 좌표
+                if (cell >= UiKit.Px(60))
+                    for (int sy = 0; sy < count; sy++)
+                        for (int sx = 0; sx < count; sx++)
+                        {
+                            var c = ToScreen(new Vector2((sx + 0.5f) * sec, (sy + 0.5f) * sec));
+                            if (c.x < r.x || c.x > r.xMax || c.y < r.y || c.y > r.yMax) continue;
+                            GUI.Label(new Rect(c.x - cell / 2, c.y - cell / 2, cell, cell), GameSession.SectorLabel(sx, sy), _cellStyle);
+                        }
+            }
+
+            GUI.BeginClip(r);
+            Vector2 L(Vector2 p) => new Vector2(p.x - r.x, p.y - r.y);
 
             // 카메라가 보는 범위
             if (cam != null && cam.orthographic)
@@ -483,8 +594,8 @@ namespace Blockov.Game
                 float halfH = cam.orthographicSize / Mathf.Sin(pitch * Mathf.Deg2Rad);
                 float halfW = cam.orthographicSize * cam.aspect;
                 var c = _gc.LocalView.PosXZ;
-                var a = ToScreen(new Vector2(c.x - halfW, c.y + halfH));
-                var b = ToScreen(new Vector2(c.x + halfW, c.y - halfH));
+                var a = L(ToScreen(new Vector2(c.x - halfW, c.y + halfH)));
+                var b = L(ToScreen(new Vector2(c.x + halfW, c.y - halfH)));
                 var box = new Rect(a.x, a.y, Mathf.Max(2, b.x - a.x), Mathf.Max(2, b.y - a.y));
                 var line = new Color(1, 1, 1, 0.6f);
                 UiKit.Rect(new Rect(box.x, box.y, box.width, 1), line);
@@ -500,19 +611,26 @@ namespace Blockov.Game
                 var lab = UiKit.Sized(UiKit.Label, 13);
                 foreach (var ad in _gc.Containers.Airdrops)
                 {
-                    var p = ToScreen(ad.Pos);
+                    var sp = ToScreen(ad.Pos);
+                    if (!Visible(sp)) continue;
+                    var p = L(sp);
                     float s = UiKit.Px(12);
                     UiKit.Rect(new Rect(p.x - s / 2 - 2, p.y - s / 2 - 2, s + 4, s + 4), new Color(1f, 0.85f, 0.2f, blink));
                     UiKit.Rect(new Rect(p.x - s / 2, p.y - s / 2, s, s), new Color(0.2f, 0.45f, 0.95f));
-                    UiKit.ShadowLabel(new Rect(p.x + s, p.y - UiKit.Px(10), UiKit.Px(160), UiKit.Px(20)), $"에어드랍 ({ad.SectorX},{ad.SectorY})", lab, new Color(1f, 0.9f, 0.5f));
+                    UiKit.ShadowLabel(new Rect(p.x + s, p.y - UiKit.Px(10), UiKit.Px(160), UiKit.Px(20)), $"에어드랍 {GameSession.SectorLabel(ad.SectorX, ad.SectorY)}", lab, new Color(1f, 0.9f, 0.5f));
                 }
             }
 
-            var me = ToScreen(_gc.LocalView.PosXZ);
-            UiKit.Rect(new Rect(me.x - 5, me.y - 5, 10, 10), new Color(0.3f, 0.7f, 1f));
-            float ang = _gc.LocalView.AimAngle * Mathf.Deg2Rad;
-            for (int i = 1; i <= 4; i++)
-                UiKit.Rect(new Rect(me.x + Mathf.Cos(ang) * i * 4 - 1, me.y - Mathf.Sin(ang) * i * 4 - 1, 3, 3), new Color(0.3f, 0.7f, 1f));
+            var meS = ToScreen(_gc.LocalView.PosXZ);
+            if (Visible(meS))
+            {
+                var me = L(meS);
+                UiKit.Rect(new Rect(me.x - 5, me.y - 5, 10, 10), new Color(0.3f, 0.7f, 1f));
+                float ang = _gc.LocalView.AimAngle * Mathf.Deg2Rad;
+                for (int i = 1; i <= 4; i++)
+                    UiKit.Rect(new Rect(me.x + Mathf.Cos(ang) * i * 4 - 1, me.y - Mathf.Sin(ang) * i * 4 - 1, 3, 3), new Color(0.3f, 0.7f, 1f));
+            }
+            GUI.EndClip();
         }
 
         void OnDestroy()

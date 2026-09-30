@@ -4,7 +4,7 @@ namespace Blockov.Game
 {
     /// <summary>
     /// 2.5D 사선 시점 카메라 (정사영). 대상(로컬 플레이어)을 따라간다.
-    /// 보이는 반경 = orthographicSize(화면 세로 절반). 마우스 휠로 minZoom ~ CameraViewHalfExtent 사이 조절.
+    /// 보이는 반경 = orthographicSize(화면 세로 절반). [ ] 키로 minZoom ~ CameraViewHalfExtent 사이 조절.
     /// game-spec 3.1: CameraViewHalfExtent = 200 (디버그 설정).
     /// </summary>
     [RequireComponent(typeof(Camera))]
@@ -19,6 +19,8 @@ namespace Blockov.Game
         public float Pitch = 55f;
         public float Distance = 400f;
         public float FollowSharpness = 12f;
+        [Tooltip("[ ] 키 줌 속도 (로그 배율/초, 0.9 ≈ 초당 x2.5)")]
+        public float ZoomSpeed = 0.9f;
 
         Camera _cam;
         Vector3 _focus;
@@ -40,12 +42,13 @@ namespace Blockov.Game
         void LateUpdate()
         {
 #if ENABLE_INPUT_SYSTEM
-            var mouse = UnityEngine.InputSystem.Mouse.current;
-            if (mouse != null)
+            // 줌: [ 줌인 / ] 줌아웃, 누르는 동안 연속 (game-spec 20.3). 마우스 휠은 전체 맵 줌 전용
+            var kb = UnityEngine.InputSystem.Keyboard.current;
+            if (kb != null)
             {
-                float scroll = mouse.scroll.ReadValue().y;
-                if (Mathf.Abs(scroll) > 0.01f)
-                    Zoom = Mathf.Clamp(Zoom * (scroll > 0 ? 0.9f : 1.1f), MinZoom, CameraViewHalfExtent);
+                float dir = (kb.rightBracketKey.isPressed ? 1f : 0f) - (kb.leftBracketKey.isPressed ? 1f : 0f);
+                if (dir != 0f)
+                    Zoom = Mathf.Clamp(Zoom * Mathf.Exp(dir * ZoomSpeed * Time.unscaledDeltaTime), MinZoom, CameraViewHalfExtent);
             }
 #endif
             if (Target != null)

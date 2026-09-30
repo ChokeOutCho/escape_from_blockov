@@ -262,6 +262,7 @@ namespace Blockov.Game
             float aim = rc.AimAngle;
             rc.AddSnapshot(now, sx, sz, 0, 0, aim);
             rc.AddSnapshot(now + GameSession.RollSeconds * 1000.0, ex, ez, 0, 0, aim);
+            rc.PlayRoll(new Vector2(ex - sx, ez - sz), (float)(ServerClock.InterpDelayMs / 1000.0));   // 보간 지연 뒤 화면에서 구름
         }
 
         // 체력 변경 (붕대 회복)

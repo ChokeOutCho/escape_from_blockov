@@ -141,7 +141,9 @@ namespace Blockov.Game
             if (mouse != null)
             {
                 mouseScreen = mouse.position.ReadValue();
-                fireHeld = InputEnabled && mouse.leftButton.isPressed && !GameHUD.IsPointerOverUi(mouseScreen);
+                var gcx = GameController.Instance;
+                fireHeld = InputEnabled && mouse.leftButton.isPressed && !GameHUD.IsPointerOverUi(mouseScreen)
+                           && !(gcx != null && gcx.ShowMinimap);     // 전체 맵이 열려 있으면 사격 안 함 (휠 줌·드래그)
             }
 #endif
             HasMoveInput = input.sqrMagnitude > 0;
@@ -233,6 +235,7 @@ namespace Blockov.Game
             _rollTo = c;
             _rollStart = Time.time;
             _rollReadyAt = Time.time + GameSession.RollCooldown;
+            _view.PlayRoll(dir);
             NetworkManager.Instance.Send(new PacketWriter(PacketType.CS_ROLL)
                 .WriteFloat(_pos.x).WriteFloat(_pos.y).WriteFloat(dir.x).WriteFloat(dir.y));
         }
@@ -340,28 +343,25 @@ namespace Blockov.Game
         ////////////////////////////////////////////////////////////////
         // 조준선
         ////////////////////////////////////////////////////////////////
+        /// <summary>조준선 길이 (game-spec 20.2): 마우스와 무관하게 고정, 벽(Wall)에서 끊김</summary>
+        public const float AimLineLength = 20f;
+
         void UpdateAimLine(bool hasGround, Vector3 ground, Vector2 aimDir)
         {
-            var w = GameSession.MyWeapon;
-            if (!hasGround || w == null || !InputEnabled) { ShowAimLine(false, default, default, 0); return; }
-            float len = Vector2.Distance(_pos, new Vector2(ground.x, ground.z));
-            ShowAimLine(true, _pos, aimDir, len, w.Range);
+            if (GameSession.MyWeapon == null || !InputEnabled || aimDir.sqrMagnitude < 0.5f) { ShowAimLine(false, default, default, 0); return; }
+            float len = AimLineLength;
+            float t = ObstacleMap.RaycastBullet(_pos, _pos + aimDir * len);
+            if (t <= 1f) len *= t;
+            ShowAimLine(true, _pos, aimDir, len);
         }
 
-        void ShowAimLine(bool show, Vector2 from, Vector2 dir, float len, float range = 0)
+        void ShowAimLine(bool show, Vector2 from, Vector2 dir, float len)
         {
             if (_aimNear == null) return;
-            if (!show || len < 0.6f)
-            {
-                _aimNear.gameObject.SetActive(false);
-                _aimFar.gameObject.SetActive(false);
-                return;
-            }
+            _aimFar.gameObject.SetActive(false);
             const float start = 0.6f;   // 캐릭터 몸 밖에서 시작
-            float nearEnd = Mathf.Min(len, range);
-            Place(_aimNear, from, dir, start, nearEnd, 0.07f);
-            if (len > range) Place(_aimFar, from, dir, Mathf.Max(start, range), len, 0.05f);
-            else _aimFar.gameObject.SetActive(false);
+            if (!show || len < start + 0.05f) { _aimNear.gameObject.SetActive(false); return; }
+            Place(_aimNear, from, dir, start, len, 0.07f);
         }
 
         static void Place(Transform t, Vector2 from, Vector2 dir, float a, float b, float width)

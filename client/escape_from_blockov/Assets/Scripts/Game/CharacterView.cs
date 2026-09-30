@@ -23,8 +23,12 @@ namespace Blockov.Game
 
         public Vector2 PosXZ => new Vector2(transform.position.x, transform.position.z);
 
+        Transform _pivot;       // 몸 중심(높이 1). 구르기 회전은 이 축을 돌린다
         Transform _body;
         Transform _aim;
+        float _rollStart = -10f;
+        Vector3 _rollAxis;
+        int _rollPuffs;
         Renderer[] _renderers;
         MaterialPropertyBlock _mpb;
         Color _baseColor;
@@ -39,15 +43,19 @@ namespace Blockov.Game
             IsLocal = isLocal;
             name = (isLocal ? "Local_" : "Remote_") + id;
 
+            _pivot = new GameObject("Pivot").transform;
+            _pivot.SetParent(transform, false);
+            _pivot.localPosition = new Vector3(0, 1f, 0);
+
             _body = GameObject.CreatePrimitive(PrimitiveType.Capsule).transform;
-            _body.SetParent(transform, false);
-            _body.localPosition = new Vector3(0, 1f, 0);
+            _body.SetParent(_pivot, false);
+            _body.localPosition = Vector3.zero;
             _body.localScale = new Vector3(radius * 2f, 1f, radius * 2f);   // capsule 기본 높이 2, 지름 1
             Destroy(_body.GetComponent<Collider>());
             RuntimeMaterials.Apply(_body.gameObject);
 
             _aim = GameObject.CreatePrimitive(PrimitiveType.Cube).transform;
-            _aim.SetParent(transform, false);
+            _aim.SetParent(_pivot, false);
             _aim.localScale = new Vector3(0.18f, 0.18f, 0.9f);
             Destroy(_aim.GetComponent<Collider>());
             RuntimeMaterials.Apply(_aim.gameObject);
@@ -65,13 +73,37 @@ namespace Blockov.Game
             if (_aim == null) return;
             float rad = angleDeg * Mathf.Deg2Rad;
             var dir = new Vector3(Mathf.Cos(rad), 0, Mathf.Sin(rad));
-            _aim.localPosition = new Vector3(0, 1.3f, 0) + dir * (0.3f + _gunLen * 0.5f);
+            _aim.localPosition = new Vector3(0, 0.3f, 0) + dir * (0.3f + _gunLen * 0.5f);
             _aim.localRotation = Quaternion.LookRotation(dir, Vector3.up);
         }
 
         public void SetPosition(float x, float z)
         {
             transform.position = new Vector3(x, 0, z);
+        }
+
+        /// <summary>구르기 연출 (game-spec 20.1): delay초 뒤부터 0.25초 동안 dir 방향 앞구르기 + 먼지 잔상</summary>
+        public void PlayRoll(Vector2 dir, float delay = 0f)
+        {
+            if (dir.sqrMagnitude < 1e-4f) return;
+            dir.Normalize();
+            _rollStart = Time.time + delay;
+            _rollAxis = Vector3.Cross(Vector3.up, new Vector3(dir.x, 0, dir.y));
+            _rollPuffs = 0;
+        }
+
+        void UpdateRoll()
+        {
+            if (_pivot == null) return;
+            float k = (Time.time - _rollStart) / GameSession.RollSeconds;
+            if (k < 0f || k > 1.6f) { _pivot.localRotation = Quaternion.identity; return; }
+            _pivot.localRotation = k >= 1f ? Quaternion.identity : Quaternion.AngleAxis(360f * k, _rollAxis);
+            // 먼지 잔상: 0, 1/3, 2/3, 1 지점
+            while (_rollPuffs < 4 && k >= _rollPuffs / 3f)
+            {
+                DustPuff.Spawn(transform.position, 1.1f + 0.2f * _rollPuffs);
+                _rollPuffs++;
+            }
         }
 
         public void OnDamaged(ushort newHp)
@@ -109,6 +141,7 @@ namespace Blockov.Game
         {
             if (_renderers == null) return;
             UpdateWeaponVisual();
+            UpdateRoll();
             if (IsDying)
             {
                 float t = (Time.time - _dieStart) / 0.6f;
