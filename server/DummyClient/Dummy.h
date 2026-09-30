@@ -1,0 +1,130 @@
+#pragma once
+////////////////////////////////////////////////////////////////////////
+// 더미 플레이어 1명: 연결 상태(Network가 사용) + 게임 상태/AI
+//  - 모든 멤버는 lock(SRWLOCK)으로 보호. IOCP 워커(수신·송신 완료)와 로직 스레드(Tick)가 공유
+//  - 객체는 프로그램 종료까지 해제하지 않는다 (진행 중 I/O가 있어도 안전)
+////////////////////////////////////////////////////////////////////////
+#include "Common.h"
+#include <vector>
+#include <unordered_map>
+#include <random>
+
+enum class NetState : uint8_t { Idle, Connecting, Connected, Closing };
+enum class GameState : uint8_t { None, Entering, InGame, Dead };
+
+enum IoType : int { IO_CONNECT = 1, IO_RECV = 2, IO_SEND = 3 };
+struct IoCtx
+{
+	OVERLAPPED ov;
+	int type;
+};
+
+struct RemotePlayer
+{
+	float x, z, vx, vz;
+	uint32_t t;         // 마지막 수신 시각 (로컬 ms)
+};
+
+struct PendingHit
+{
+	uint32_t due;       // 탄이 도착하는 로컬 시각 → 이때 보고
+	uint32_t shotSeq;
+	uint32_t targetId;
+	float hx, hz;
+};
+
+struct WeaponInfo
+{
+	uint8_t id = 0;
+	uint16_t damage = 0;
+	float range = 0;
+	float speed = 0;
+	uint16_t intervalMs = 0;
+	float radius = 0;
+};
+
+class Dummy
+{
+public:
+	void Init(int index);
+
+	// 로직 스레드 (lock 보유 상태에서 호출)
+	void Tick(uint32_t now);
+
+	// Network 콜백 (lock 보유 상태에서 호출)
+	void OnConnected(uint32_t now);
+	void OnPacket(const uint8_t* payload, int len, uint32_t now);
+	void OnClosed(uint32_t now, bool intended);
+
+	// 퇴장 모드에서 빠진 더미를 다시 활성화 (lock 보유)
+	void ClearRetired() { m_retired = false; }
+
+	// 대시보드용 (lock 없이 읽는 대략값)
+	NetState Net() const { return net; }
+	GameState Game() const { return game; }
+
+public:
+	int index = 0;
+	SRWLOCK lock;
+
+	// ---- 네트워크 (Network 전용) ----
+	SOCKET sock = INVALID_SOCKET;
+	volatile NetState net = NetState::Idle;
+	int ioCount = 0;
+	bool closeIntended = false;
+	IoCtx connCtx{}, recvCtx{}, sendCtx{};
+	static const int RECV_BUF = 8192;
+	char recvBuf[RECV_BUF];
+	int recvLen = 0;
+	std::vector<char> sendQ, sendInflight;
+	bool sending = false;
+
+private:
+	void Send(PacketWriter& w);
+	void GameTick(uint32_t now);
+	void Wander(uint32_t now, float dt);
+	void PickHeading(uint32_t now);
+	void SelectTarget(uint32_t now);
+	void Fire(uint32_t now, float tx, float tz, float tvx, float tvz);
+	void FlushHits(uint32_t now);
+	void SendMoveIfNeeded(uint32_t now);
+	void Die(uint32_t now);
+	uint32_t ServerNow(uint32_t now) const { return now + (uint32_t)m_clockOffset; }
+	float Rand01() { return std::uniform_real_distribution<float>(0.0f, 1.0f)(m_rng); }
+	int RandInt(int lo, int hi) { return std::uniform_int_distribution<int>(lo, hi)(m_rng); }
+
+	volatile GameState game = GameState::None;
+	bool m_retired = false;         // 퇴장 모드에서 사망 → 다시 접속하지 않음
+	uint32_t m_reconnectAt = 0;
+	uint32_t m_enterDeadline = 0;
+	uint32_t m_deadAt = 0;
+
+	// 내 캐릭터
+	uint32_t m_myId = 0;
+	float m_x = 0, m_z = 0, m_vx = 0, m_vz = 0, m_aim = 0;
+	float m_moveSpeed = 12.0f, m_radius = 0.5f, m_sprintMul = 1.2f;
+	uint8_t m_weaponId = 0;
+	WeaponInfo m_weapon;
+	bool m_haveWeapon = false;
+
+	// 전송 상태
+	uint16_t m_moveSeq = 0;
+	uint32_t m_shotSeq = 0;
+	uint32_t m_lastTick = 0, m_lastMoveSend = 0, m_nextTurn = 0, m_nextFire = 0;
+	uint32_t m_nextPing = 0, m_nextHeartbeat = 0, m_nextTargetScan = 0;
+	int m_pingsSent = 0;
+	float m_lastSentVx = 0, m_lastSentVz = 0, m_lastSentAim = 0;
+	bool m_forceMove = false;
+
+	// 시각 동기화 (서버 시각 = 로컬 + offset)
+	int32_t m_clockOffset = 0;
+	int m_bestRtt = 1 << 30;
+	uint32_t m_bestRttAt = 0;
+
+	// 시야 / 교전
+	std::unordered_map<uint32_t, RemotePlayer> m_remotes;
+	uint32_t m_targetId = 0;
+	std::vector<PendingHit> m_hits;
+
+	std::mt19937 m_rng;
+};

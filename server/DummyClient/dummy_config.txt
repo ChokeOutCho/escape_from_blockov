@@ -1,0 +1,21 @@
+{
+    "server_ip": "127.0.0.1",
+    "server_port": 10301,
+
+    "count": 0,
+    "max_dummies": 20000,
+    "io_threads": 4,
+    "logic_threads": 4,
+    "tick_ms": 50,
+    "connect_per_sec": 300,
+
+    "death_mode": "reconnect",
+    "reconnect_delay_ms": 2000,
+
+    "fire": true,
+    "engage_range": 60,
+    "sprint_chance": 0.3,
+    "name_prefix": "Dummy",
+
+    "obstacle_map": "../../map/obstacles.bmp"
+}

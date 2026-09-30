@@ -1,0 +1,537 @@
+#include "Dummy.h"
+#include "Network.h"
+#include <cmath>
+#include <algorithm>
+
+namespace
+{
+	const float PI_F = 3.14159265f;
+	const int ENTER_TIMEOUT_MS = 10000;
+	const int MOVE_SEND_MS = 100;           // 이동 중 CS_MOVE 주기 (클라와 동일)
+	const int MOVE_MIN_MS = 50;             // 속도 변화 시 최소 간격
+	const float AIM_SEND_DEG = 5.0f;
+	const int PING_MS = 2000;
+	const int HEARTBEAT_MS = 60000;
+	const int REMOTE_EXTRAPOLATE_MAX_MS = 200;
+	const int MAX_LOS_CHECKS = 4;           // 대상 선택 시 시야선(벽) 검사 최대 횟수
+	const int HIT_STALE_MS = 1500;          // 보고 시한을 넘긴 명중은 버린다
+
+	float AngleDiff(float a, float b)
+	{
+		float d = fmodf(fabsf(a - b), 360.0f);
+		return d > 180.0f ? 360.0f - d : d;
+	}
+	float ToAim(float dx, float dz)
+	{
+		float a = atan2f(dz, dx) * 180.0f / PI_F;
+		return a < 0 ? a + 360.0f : a;
+	}
+}
+
+void Dummy::Init(int idx)
+{
+	index = idx;
+	InitializeSRWLock(&lock);
+	m_rng.seed((uint32_t)idx * 2654435761u ^ NowMs());
+	m_reconnectAt = NowMs() + (uint32_t)RandInt(0, 500);
+}
+
+void Dummy::Send(PacketWriter& w)
+{
+	if (!w.Ok()) return;
+	const char* data = w.Data();
+	g_net.Send(this, data, w.Size());
+}
+
+////////////////////////////////////////////////////////////////////////
+// 로직 틱
+////////////////////////////////////////////////////////////////////////
+void Dummy::Tick(uint32_t now)
+{
+	bool wanted = index < g_targetCount.load(std::memory_order_relaxed) && !m_retired;
+
+	if (net == NetState::Idle)
+	{
+		if (wanted && TimeDiff(now, m_reconnectAt) >= 0 && TakeConnectToken())
+		{
+			if (!g_net.Connect(this, now))
+				m_reconnectAt = now + 1000 + (uint32_t)RandInt(0, 1000);
+		}
+		return;
+	}
+	if (!wanted && (net == NetState::Connected || net == NetState::Connecting))
+	{
+		g_net.Close(this, true, now);     // 인원 축소
+		return;
+	}
+	if (net != NetState::Connected) return;
+
+	switch (game)
+	{
+	case GameState::Entering:
+		if (TimeDiff(now, m_enterDeadline) > 0)
+		{
+			g_stats.enterTimeout++;
+			m_reconnectAt = now + 3000;
+			g_net.Close(this, false, now);
+		}
+		break;
+	case GameState::InGame:
+		GameTick(now);
+		break;
+	case GameState::Dead:
+		// 서버가 death_disconnect_ms(3초) 뒤 끊는다. 너무 오래 걸리면 직접 끊는다
+		if (TimeDiff(now, m_deadAt) > 10000) g_net.Close(this, true, now);
+		break;
+	default:
+		break;
+	}
+}
+
+////////////////////////////////////////////////////////////////////////
+// 네트워크 콜백
+////////////////////////////////////////////////////////////////////////
+void Dummy::OnConnected(uint32_t now)
+{
+	game = GameState::Entering;
+	m_enterDeadline = now + ENTER_TIMEOUT_MS;
+
+	std::string name = g_cfg.namePrefix + std::to_string(index + 1);
+	if (name.size() > (size_t)NAME_LEN) name = name.substr(name.size() - NAME_LEN);
+	PacketWriter w(PT_CS_ENTER_GAME);
+	w.W32(GAME_PROTOCOL_VERSION);
+	w.WName(name);
+	Send(w);
+}
+
+void Dummy::OnClosed(uint32_t now, bool intended)
+{
+	if (!intended && game == GameState::InGame) g_stats.unexpectedDisconnects++;
+	GameState prev = game;
+	game = GameState::None;
+	m_remotes.clear();
+	m_hits.clear();
+	m_targetId = 0;
+	m_vx = m_vz = 0;
+
+	// 다음 접속 시각: 사망 후엔 reconnect_delay, 그 외(끊김·실패)는 1~3초 백오프
+	uint32_t delay = (prev == GameState::Dead) ? (uint32_t)g_cfg.reconnectDelayMs : 1000u;
+	uint32_t at = now + delay + (uint32_t)RandInt(0, 1000);
+	if (TimeDiff(at, m_reconnectAt) > 0) m_reconnectAt = at;
+}
+
+void Dummy::Die(uint32_t now)
+{
+	if (game == GameState::Dead) return;
+	game = GameState::Dead;
+	m_deadAt = now;
+	g_stats.deaths++;
+	if (!g_reconnectMode.load()) m_retired = true;
+	m_vx = m_vz = 0;
+	m_remotes.clear();
+	m_hits.clear();
+	m_targetId = 0;
+}
+
+void Dummy::OnPacket(const uint8_t* payload, int len, uint32_t now)
+{
+	PacketReader r(payload, len);
+	uint16_t type = r.U16();
+
+	switch (type)
+	{
+	case PT_SC_ENTER_GAME:
+	{
+		uint8_t result = r.U8();
+		if (result != ENTER_OK)
+		{
+			if (result == ENTER_SERVER_FULL) { g_stats.enterFull++; m_reconnectAt = now + 5000 + (uint32_t)RandInt(0, 2000); }
+			else g_stats.enterOther++;
+			g_net.Close(this, false, now);
+			return;
+		}
+		m_myId = r.U32();
+		r.U8();                         // room
+		m_x = r.F(); m_z = r.F();
+		r.U16(); r.U16();               // hp, maxHp
+		m_moveSpeed = r.F();
+		m_radius = r.F();
+		m_weaponId = r.U8();
+		uint32_t serverTime = r.U32();
+		r.Skip(NAME_LEN * 2);
+		r.U32();                        // map hash
+		if (r.Remain() >= 4) m_sprintMul = r.F();
+
+		game = GameState::InGame;
+		g_stats.enterOk++;
+		m_clockOffset = (int32_t)(serverTime - now);    // 대략값 → 핑으로 보정
+		m_bestRtt = 1 << 30;
+		m_pingsSent = 0;
+		m_nextPing = now;
+		m_nextHeartbeat = now + HEARTBEAT_MS;
+		m_lastTick = now;
+		m_nextTurn = now;
+		m_nextTargetScan = now + 300;
+		m_nextFire = now;
+		m_vx = m_vz = 0;
+		m_lastSentVx = m_lastSentVz = 0;
+		m_forceMove = true;
+		m_remotes.clear();
+		m_hits.clear();
+		m_targetId = 0;
+		m_haveWeapon = false;
+		return;
+	}
+	case PT_SC_WEAPON_DEFS:
+	{
+		int n = r.U8();
+		for (int i = 0; i < n && r.Ok(); i++)
+		{
+			WeaponInfo w;
+			w.id = r.U8(); w.damage = r.U16(); w.range = r.F(); w.speed = r.F();
+			w.intervalMs = r.U16(); w.radius = r.F();
+			r.U16(); r.U16(); r.F(); r.U8(); r.U8();   // magazine, reload, spread, pellets, pierce
+			r.Skip(3);
+			if (r.Ok() && w.id == m_weaponId && w.speed > 0) { m_weapon = w; m_haveWeapon = true; }
+		}
+		return;
+	}
+	case PT_SC_CREATE_CHARACTERS:
+	{
+		int n = r.U8();
+		for (int i = 0; i < n && r.Ok(); i++)
+		{
+			uint32_t id = r.U32();
+			r.Skip(NAME_LEN * 2);
+			RemotePlayer p;
+			p.x = r.F(); p.z = r.F(); p.vx = r.F(); p.vz = r.F();
+			r.F(); r.U16(); r.U16(); r.U8(); r.U8();   // aim, hp, maxHp, weapon, reserved
+			p.t = now;
+			if (r.Ok() && id != m_myId) m_remotes[id] = p;
+		}
+		return;
+	}
+	case PT_SC_DELETE_CHARACTERS:
+	{
+		int n = r.U8();
+		for (int i = 0; i < n && r.Ok(); i++)
+		{
+			uint32_t id = r.U32();
+			m_remotes.erase(id);
+			if (id == m_targetId) m_targetId = 0;
+		}
+		return;
+	}
+	case PT_SC_MOVE:
+	{
+		uint32_t id = r.U32();
+		RemotePlayer p;
+		p.x = r.F(); p.z = r.F(); p.vx = r.F(); p.vz = r.F();
+		p.t = now;
+		if (r.Ok() && id != m_myId) m_remotes[id] = p;
+		return;
+	}
+	case PT_SC_POSITION_CORRECT:
+	{
+		m_x = r.F(); m_z = r.F();
+		m_vx = m_vz = 0;
+		m_nextTurn = now;
+		m_forceMove = true;
+		g_stats.corrections++;
+		return;
+	}
+	case PT_SC_DAMAGE:
+	{
+		uint32_t attacker = r.U32();
+		r.U32();                // victim
+		if (attacker == m_myId) g_stats.hitsConfirmed++;
+		return;
+	}
+	case PT_SC_PLAYER_DIE:
+	{
+		uint32_t victim = r.U32();
+		uint32_t killer = r.U32();
+		if (victim == m_myId) { Die(now); return; }
+		if (killer == m_myId) g_stats.kills++;
+		m_remotes.erase(victim);
+		if (victim == m_targetId) m_targetId = 0;
+		return;
+	}
+	case PT_SC_DEATH_RESULT:
+		Die(now);
+		return;
+	case PT_SC_KICK:
+	{
+		uint8_t reason = r.U8();
+		g_stats.kicks[reason < 5 ? reason : 0]++;
+		return;
+	}
+	case PT_SC_PONG:
+	{
+		uint32_t clientTime = r.U32();
+		uint32_t serverTime = r.U32();
+		int rtt = TimeDiff(now, clientTime);
+		if (rtt < 0) return;
+		g_stats.AddRtt(rtt);
+		// 최근 10초 안에서 RTT가 가장 작은 표본으로 오프셋 추정
+		if (rtt <= m_bestRtt || TimeDiff(now, m_bestRttAt) > 10000)
+		{
+			m_bestRtt = rtt;
+			m_bestRttAt = now;
+			m_clockOffset = (int32_t)(serverTime + (uint32_t)(rtt / 2) - now);
+		}
+		return;
+	}
+	default:
+		return;     // SC_FIRE, SC_SCORE, SC_RANKING_TOP3 등은 무시
+	}
+}
+
+////////////////////////////////////////////////////////////////////////
+// 게임 AI: 배회 → 적 발견 시 정지 후 사격
+////////////////////////////////////////////////////////////////////////
+void Dummy::GameTick(uint32_t now)
+{
+	float dt = TimeDiff(now, m_lastTick) / 1000.0f;
+	if (dt > 0.2f) dt = 0.2f;
+	if (dt < 0) dt = 0;
+	m_lastTick = now;
+
+	// 시각 동기화: 입장 직후 200ms 간격 3회, 이후 2초마다
+	if (TimeDiff(now, m_nextPing) >= 0)
+	{
+		PacketWriter w(PT_CS_PING);
+		w.W32(now);
+		Send(w);
+		m_pingsSent++;
+		m_nextPing = now + (m_pingsSent < 3 ? 200 : PING_MS);
+	}
+	if (TimeDiff(now, m_nextHeartbeat) >= 0)
+	{
+		PacketWriter w(PT_CS_HEARTBEAT);
+		Send(w);
+		m_nextHeartbeat = now + HEARTBEAT_MS;
+	}
+
+	FlushHits(now);
+
+	bool canFire = g_fireEnabled.load(std::memory_order_relaxed) && m_haveWeapon;
+	if (canFire && TimeDiff(now, m_nextTargetScan) >= 0)
+	{
+		SelectTarget(now);
+		m_nextTargetScan = now + 250 + (uint32_t)RandInt(0, 100);
+	}
+
+	auto it = (canFire && m_targetId) ? m_remotes.find(m_targetId) : m_remotes.end();
+	if (it != m_remotes.end())
+	{
+		// 교전: 멈추고 조준
+		if (m_vx != 0 || m_vz != 0) { m_vx = m_vz = 0; m_forceMove = true; }
+		const RemotePlayer& t = it->second;
+		float age = std::min(TimeDiff(now, t.t), REMOTE_EXTRAPOLATE_MAX_MS) / 1000.0f;
+		float tx = t.x + t.vx * age, tz = t.z + t.vz * age;
+		float dx = tx - m_x, dz = tz - m_z;
+		float dist = sqrtf(dx * dx + dz * dz);
+		float range = std::min(g_cfg.engageRange, m_weapon.range - 2.0f);
+		if (dist > range || dist < 0.01f)
+		{
+			m_targetId = 0;
+		}
+		else
+		{
+			m_aim = ToAim(dx, dz);
+			SendMoveIfNeeded(now);      // 정지·조준을 먼저 알린 뒤 사격 (서버 원점 검사)
+			if (TimeDiff(now, m_nextFire) >= 0) Fire(now, tx, tz, t.vx, t.vz);
+			return;
+		}
+	}
+	else
+	{
+		m_targetId = 0;
+	}
+
+	Wander(now, dt);
+	SendMoveIfNeeded(now);
+}
+
+void Dummy::SelectTarget(uint32_t now)
+{
+	float range = std::min(g_cfg.engageRange, m_weapon.range - 2.0f);
+	float r2 = range * range;
+
+	// 가까운 후보 8명까지 모아서, 가까운 순으로 시야선(벽) 검사
+	struct Cand { float d2; uint32_t id; float x, z; };
+	Cand best[8];
+	int nBest = 0;
+	for (const auto& kv : m_remotes)
+	{
+		const RemotePlayer& p = kv.second;
+		float age = std::min(TimeDiff(now, p.t), REMOTE_EXTRAPOLATE_MAX_MS) / 1000.0f;
+		float x = p.x + p.vx * age, z = p.z + p.vz * age;
+		float dx = x - m_x, dz = z - m_z;
+		float d2 = dx * dx + dz * dz;
+		if (d2 > r2) continue;
+		if (nBest < 8) best[nBest++] = { d2, kv.first, x, z };
+		else
+		{
+			int worst = 0;
+			for (int i = 1; i < 8; i++) if (best[i].d2 > best[worst].d2) worst = i;
+			if (d2 < best[worst].d2) best[worst] = { d2, kv.first, x, z };
+		}
+	}
+	std::sort(best, best + nBest, [](const Cand& a, const Cand& b) { return a.d2 < b.d2; });
+
+	m_targetId = 0;
+	int checks = std::min(nBest, MAX_LOS_CHECKS);
+	for (int i = 0; i < checks; i++)
+	{
+		if (!g_map.SegmentBlocked(m_x, m_z, best[i].x, best[i].z, true))
+		{
+			m_targetId = best[i].id;
+			return;
+		}
+	}
+}
+
+void Dummy::Fire(uint32_t now, float tx, float tz, float tvx, float tvz)
+{
+	// 리드 사격: 탄 도착 시점의 대상 위치를 노린다 (1회 보정)
+	float dx = tx - m_x, dz = tz - m_z;
+	float flight = sqrtf(dx * dx + dz * dz) / m_weapon.speed;
+	float ix = tx + tvx * flight, iz = tz + tvz * flight;
+	dx = ix - m_x; dz = iz - m_z;
+	float dist = sqrtf(dx * dx + dz * dz);
+	if (dist < 0.01f || dist > m_weapon.range) { m_targetId = 0; return; }
+	if (g_map.SegmentBlocked(m_x, m_z, ix, iz, true)) { m_targetId = 0; return; }     // 벽에 막힘
+	flight = dist / m_weapon.speed;
+
+	// ViewTime: 내가 알고 있는 대상 위치에 해당하는 서버 시각 (= 추정 서버 시각 - 편도 지연)
+	int oneWay = m_bestRtt < (1 << 29) ? m_bestRtt / 2 : 0;
+	uint32_t viewTime = ServerNow(now) - (uint32_t)oneWay - 20;
+
+	m_shotSeq++;
+	PacketWriter w(PT_CS_FIRE);
+	w.W32(m_shotSeq);
+	w.W8(m_weapon.id);
+	w.WF(m_x); w.WF(m_z);
+	w.WF(dx / dist); w.WF(dz / dist);
+	w.W32(viewTime);
+	w.W16(0);
+	Send(w);
+	g_stats.shots++;
+
+	// 연사 간격 + 10% 여유 (서버 토큰 버킷 1.1배 충전)
+	m_nextFire = now + (uint32_t)(m_weapon.intervalMs * 1.1f) + (uint32_t)RandInt(0, 20);
+
+	PendingHit h;
+	h.due = now + (uint32_t)(flight * 1000.0f) + 20;
+	h.shotSeq = m_shotSeq;
+	h.targetId = m_targetId;
+	h.hx = ix; h.hz = iz;
+	m_hits.push_back(h);
+}
+
+void Dummy::FlushHits(uint32_t now)
+{
+	if (m_hits.empty()) return;
+	PacketWriter w(PT_CS_HIT_REPORT);
+	uint8_t count = 0;
+	char items[MAX_HIT_ITEMS * LEN_HIT_ITEM];
+	size_t keep = 0;
+	for (size_t i = 0; i < m_hits.size(); i++)
+	{
+		const PendingHit& h = m_hits[i];
+		if (TimeDiff(now, h.due) < 0) { m_hits[keep++] = h; continue; }
+		if (TimeDiff(now, h.due) > HIT_STALE_MS) continue;
+		if (m_remotes.find(h.targetId) == m_remotes.end()) continue;     // 이미 사망/시야 이탈
+		if (count >= MAX_HIT_ITEMS) { m_hits[keep++] = h; continue; }
+		char* p = items + count * LEN_HIT_ITEM;
+		uint8_t pellet = 0;
+		memcpy(p, &h.shotSeq, 4); memcpy(p + 4, &pellet, 1); memcpy(p + 5, &h.targetId, 4);
+		memcpy(p + 9, &h.hx, 4); memcpy(p + 13, &h.hz, 4);
+		count++;
+	}
+	m_hits.resize(keep);
+	if (count == 0) return;
+
+	w.W8(count);
+	for (int i = 0; i < count * LEN_HIT_ITEM; i++) w.W8((uint8_t)items[i]);
+	Send(w);
+	g_stats.hitsReported += count;
+}
+
+void Dummy::PickHeading(uint32_t now)
+{
+	float speed = m_moveSpeed * (Rand01() < g_cfg.sprintChance ? m_sprintMul : 1.0f);
+	for (int tryN = 0; tryN < 8; tryN++)
+	{
+		float a = Rand01() * 2.0f * PI_F;
+		float cx = cosf(a), cz = sinf(a);
+		float ax = m_x + cx * 3.0f, az = m_z + cz * 3.0f;
+		if (ax < MapConst::MinPos + m_radius || az < MapConst::MinPos + m_radius ||
+			ax > MapConst::MaxPos - m_radius || az > MapConst::MaxPos - m_radius) continue;
+		if (g_map.CircleBlocked(ax, az, m_radius) || g_map.SegmentBlocked(m_x, m_z, ax, az, false)) continue;
+		m_vx = cx * speed;
+		m_vz = cz * speed;
+		m_aim = ToAim(cx, cz);
+		m_nextTurn = now + (uint32_t)RandInt(2000, 6000);
+		return;
+	}
+	// 갈 곳이 없으면 잠시 정지 후 재시도
+	m_vx = m_vz = 0;
+	m_nextTurn = now + 500;
+}
+
+void Dummy::Wander(uint32_t now, float dt)
+{
+	if ((m_vx == 0 && m_vz == 0) || TimeDiff(now, m_nextTurn) >= 0)
+	{
+		PickHeading(now);
+		if (m_vx == 0 && m_vz == 0) return;
+	}
+
+	// 0.25m 단위로 나눠 이동, 막히면 멈추고 다음 틱에 방향 전환 (클라 LocalPlayerController와 같은 방식)
+	float mx = m_vx * dt, mz = m_vz * dt;
+	float len = sqrtf(mx * mx + mz * mz);
+	int steps = std::max(1, (int)ceilf(len / 0.25f));
+	float sx = mx / steps, sz = mz / steps;
+	for (int i = 0; i < steps; i++)
+	{
+		float nx = m_x + sx, nz = m_z + sz;
+		if (nx < MapConst::MinPos + m_radius || nz < MapConst::MinPos + m_radius ||
+			nx > MapConst::MaxPos - m_radius || nz > MapConst::MaxPos - m_radius ||
+			g_map.CircleBlocked(nx, nz, m_radius))
+		{
+			m_vx = m_vz = 0;
+			m_nextTurn = now;
+			m_forceMove = true;
+			break;
+		}
+		m_x = nx;
+		m_z = nz;
+	}
+}
+
+void Dummy::SendMoveIfNeeded(uint32_t now)
+{
+	bool velChanged = fabsf(m_vx - m_lastSentVx) > 0.01f || fabsf(m_vz - m_lastSentVz) > 0.01f;
+	bool moving = m_vx != 0 || m_vz != 0;
+	bool aimChanged = AngleDiff(m_aim, m_lastSentAim) >= AIM_SEND_DEG;
+	int since = TimeDiff(now, m_lastMoveSend);
+
+	bool send = false;
+	if ((velChanged || m_forceMove) && since >= MOVE_MIN_MS) send = true;
+	else if ((moving || aimChanged) && since >= MOVE_SEND_MS) send = true;
+	if (!send) return;
+
+	m_moveSeq++;
+	PacketWriter w(PT_CS_MOVE);
+	w.WF(m_x); w.WF(m_z); w.WF(m_vx); w.WF(m_vz); w.WF(m_aim);
+	w.W16(m_moveSeq);
+	Send(w);
+	m_lastMoveSend = now;
+	m_lastSentVx = m_vx;
+	m_lastSentVz = m_vz;
+	m_lastSentAim = m_aim;
+	m_forceMove = false;
+}
