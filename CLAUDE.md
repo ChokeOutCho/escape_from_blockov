@@ -1,0 +1,32 @@
+# escape_from_blockov — 작업 규칙
+
+WebGL 빌드 2.5D PvP 슈팅 게임(동시 50인) 클라이언트(`client/`)와 게임 서버(`server/`).
+
+## 서버 작업 전 필독
+- 서버는 자체 IOCP 컨텐츠 서버 라이브러리(NetLib) 위에 구현한다.
+- **서버 코드를 보거나 수정하기 전에 `server/ContentEchoServer/CONTENT_SERVER_LIBRARY.md`를 먼저 읽을 것.**
+  특히 5.2(송신 API 소유권), 5.3(Content 스레딩 규칙), 8장(패킷 크기 제약·알려진 이슈).
+- 라이브러리(`NetLib/`, `Utils/`) 동작을 바꾸면 위 문서도 함께 갱신한다.
+- 서버 소스는 CP949 + CRLF 인코딩. 편집 시 인코딩을 유지한다.
+
+## 파일 삭제 규칙
+- 파일 삭제는 허용하되 **반드시 휴지통으로** 보낸다(영구 삭제 금지).
+  - 일반 파일(PowerShell에서 `Add-Type -AssemblyName Microsoft.VisualBasic` 후): `[Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($p, 'OnlyErrorDialogs', 'SendToRecycleBin')`
+  - Unity 에셋: `AssetDatabase.MoveAssetToTrash(path)`
+
+## 구성 (2026-09-30)
+- 게임 명세: 프로젝트 문서 `claude/game-spec.md` (v0.6, 이 저장소의 `GAME_SPEC.md`는 사본)
+- 실행: 저장소 최상단 `start_server.bat` [`build`] [`web`] / `stop_server.bat` (명세 18장). 게임 서버·게이트웨이·WebGL 웹서버를 한 번에 실행, `web`은 브라우저 열기
+- 테스트 모드: `server/GameServer/game_config.txt`의 `test_mode: true` → 모든 플레이어를 섹터 (0,0)에 스폰
+- 게임 서버: `server/GameServer/` (README 참고, `GameServer.sln` Release x64). 로직 테스트: `test/` 스텁 + Node 봇
+- 게이트웨이: `server/gateway/index.js` (WS 8080 → TCP 10301)
+- 엄폐물 맵: `map/obstacles.bmp` (1픽셀 = 1m, 검정 = 벽, 회색 = 낮은 엄폐물). 수정 후 서버 재시작 + Unity `Blockov/Map/Import Obstacles (default BMP)` + WebGL 재빌드
+- 섹터: 64m × 100×100 (`SectorGrid.cs` / 서버 `MapConst`)
+- 클라: `client/escape_from_blockov` — 씬 Title(0) → TestArena(1), 스크립트 `Assets/Scripts/Network`, `Assets/Scripts/Game`, `Assets/Scripts/Map`, 에디터 도구 `Assets/Editor`
+- WebGL: `start_server.bat` → `http://localhost:8090/` (웹서버가 `/ws`로 게임 WS 중계). 외부 접속은 공유기 TCP 8090 포트포워딩(명세 18.4). 8080·10301은 외부에 열지 않음
+
+## 작업 시 주의
+- `start` 로 창을 띄우는 배치 파일을 출력 리다이렉트/ReadToEnd로 실행하지 말 것(자식이 파이프를 물고 있어 호출측이 멈춤).
+- 서버를 스크립트에서 띄울 때 표준 출력은 파일로 리다이렉트(읽지 않는 파이프 금지).
+- 런타임에 `CreatePrimitive` 등으로 만든 렌더러에는 반드시 `RuntimeMaterials.Apply()`(URP Lit 에셋)를 쓸 것. 기본 머티리얼은 WebGL 빌드에서 분홍색이 된다.
+- 프로토콜을 바꾸면 `GAME_PROTOCOL_VERSION`/`NetConst.ProtocolVersion`과 `server/GameServer/test/*.js`의 버전·길이도 함께 갱신.
