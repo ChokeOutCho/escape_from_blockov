@@ -11,7 +11,7 @@ namespace Blockov.Net
         public const int HeaderSize = 5;
         public const int MaxPayload = 512;    // 서버 PAYLOAD_LEN_DEFAULT
 
-        public const uint ProtocolVersion = 5;   // v3: SC_ENTER_GAME에 MapHash, v4: SprintMultiplier, v5: SC_PLAYER_COUNT
+        public const uint ProtocolVersion = 6;   // v3: SC_ENTER_GAME에 MapHash, v4: SprintMultiplier, v5: SC_PLAYER_COUNT, v6: 아이템·구르기·에어드랍·가방
         public const int NameLength = 12;     // WCHAR Name[12]
         public const int MaxHitItems = 29;    // CS_HIT_REPORT (3 + 17n <= 512)
     }
@@ -26,6 +26,11 @@ namespace Blockov.Net
         CS_HIT_REPORT = 3003,
         CS_PING = 3004,
         CS_HEARTBEAT = 3005,
+        CS_ROLL = 3006,             // float StartX, StartZ, DirX, DirZ
+        CS_SWITCH_WEAPON = 3007,    // BYTE Slot (1 특수 총, 2 권총)
+        CS_USE_BANDAGE = 3008,
+        CS_OPEN_CONTAINER = 3009,   // UINT32 ContainerId
+        CS_TAKE_ITEM = 3010,        // UINT32 ContainerId, BYTE Item (1 특수 총, 3 붕대)
 
         // S -> C
         SC_ENTER_GAME = 3100,
@@ -43,6 +48,13 @@ namespace Blockov.Net
         SC_KICK = 3112,
         SC_PONG = 3113,
         SC_PLAYER_COUNT = 3114,     // UINT32 TotalPlayers (서버 전체 접속 인원, 접속·해제 시 방송)
+        SC_INVENTORY = 3115,        // BYTE Equipped, BYTE SpecialWeaponId, WORD Durability, BYTE Bandages
+        SC_ROLL = 3116,             // UINT32 PlayerId, float StartX, StartZ, EndX, EndZ
+        SC_HP = 3117,               // UINT32 PlayerId, WORD Hp
+        SC_CONTAINER_CREATE = 3118, // BYTE Count, {UINT32 Id, BYTE Type, float X, Z}[n]
+        SC_CONTAINER_DELETE = 3119, // BYTE Count, UINT32 Id[n]
+        SC_CONTAINER_CONTENTS = 3120, // UINT32 Id, BYTE SpecialWeaponId, WORD Durability, BYTE Bandages
+        SC_AIRDROP = 3121,          // UINT32 Id, float X, Z, BYTE SectorX, SectorY, BYTE IsNew
     }
 
     public enum EnterResult : byte

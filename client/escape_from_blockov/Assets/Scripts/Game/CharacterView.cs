@@ -29,6 +29,8 @@ namespace Blockov.Game
         MaterialPropertyBlock _mpb;
         Color _baseColor;
         float _dieStart;
+        byte _shownWeapon = 255;
+        float _gunLen = 0.9f;
 
         public void Init(uint id, string displayName, bool isLocal, float radius)
         {
@@ -63,7 +65,7 @@ namespace Blockov.Game
             if (_aim == null) return;
             float rad = angleDeg * Mathf.Deg2Rad;
             var dir = new Vector3(Mathf.Cos(rad), 0, Mathf.Sin(rad));
-            _aim.localPosition = new Vector3(0, 1.3f, 0) + dir * 0.75f;
+            _aim.localPosition = new Vector3(0, 1.3f, 0) + dir * (0.3f + _gunLen * 0.5f);
             _aim.localRotation = Quaternion.LookRotation(dir, Vector3.up);
         }
 
@@ -86,9 +88,27 @@ namespace Blockov.Game
             Hp = 0;
         }
 
+        // 들고 있는 총 모양 (1 권총 / 2 샷건 / 3 저격총)
+        void UpdateWeaponVisual()
+        {
+            if (_shownWeapon == WeaponId || _aim == null) return;
+            _shownWeapon = WeaponId;
+            Vector3 s;
+            switch (WeaponId)
+            {
+                case 2: s = new Vector3(0.3f, 0.24f, 1.1f); break;
+                case 3: s = new Vector3(0.14f, 0.14f, 1.7f); break;
+                default: s = new Vector3(0.18f, 0.18f, 0.9f); break;
+            }
+            _gunLen = s.z;
+            _aim.localScale = s;
+            SetAim(AimAngle);
+        }
+
         protected virtual void LateUpdate()
         {
             if (_renderers == null) return;
+            UpdateWeaponVisual();
             if (IsDying)
             {
                 float t = (Time.time - _dieStart) / 0.6f;

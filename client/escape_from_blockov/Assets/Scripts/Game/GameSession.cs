@@ -17,6 +17,13 @@ namespace Blockov.Game
         public float SpreadDeg;
         public byte Pellets;
         public byte Pierce;
+        /// <summary>발사 방향 무작위 흔들림 ±JitterDeg (v6)</summary>
+        public float JitterDeg;
+        /// <summary>특수 총 최대 내구도(발사 횟수). 0 = 무한</summary>
+        public ushort Durability;
+        /// <summary>1 특수 총, 2 기본 총</summary>
+        public byte Slot;
+        public string Name;
     }
 
     public struct RankEntry
@@ -97,6 +104,11 @@ namespace Blockov.Game
             Death = null;
             Weapons.Clear();
             Top3.Clear();
+            PistolWeaponId = WeaponId;
+            Equipped = SlotPistol;
+            SpecialWeaponId = 0;
+            SpecialDurability = 0;
+            Bandages = 0;
         }
 
         public static void ReadWeaponDefs(PacketReader r)
@@ -117,12 +129,70 @@ namespace Blockov.Game
                     SpreadDeg = r.ReadFloat(),
                     Pellets = r.ReadByte(),
                     Pierce = r.ReadByte(),
+                    JitterDeg = r.ReadFloat(),
+                    Durability = r.ReadUInt16(),
+                    Slot = r.ReadByte(),
                 };
-                r.Skip(3);
+                r.Skip(2);
+                d.Name = WeaponName(d.Id);
                 Weapons[d.Id] = d;
             }
         }
 
         public static WeaponDef MyWeapon => Weapons.TryGetValue(WeaponId, out var w) ? w : null;
+
+        public static string WeaponName(byte id)
+        {
+            switch (id)
+            {
+                case 1: return "권총";
+                case 2: return "샷건";
+                case 3: return "저격총";
+                default: return id == 0 ? "없음" : $"무기 {id}";
+            }
+        }
+
+        ////////////////////////////////////////////////////////////////
+        // v6 인벤토리 (SC_INVENTORY, game-spec 19.1)
+        ////////////////////////////////////////////////////////////////
+        public const byte SlotSpecial = 1, SlotPistol = 2, SlotBandage = 3;
+        public const int MaxBandages = 5;
+        public const float BandageSeconds = 2f;
+        public const float RollSeconds = 0.25f, RollSpeedMult = 3f, RollCooldown = 3f;
+        public const float InteractRange = 2.5f, LootCloseRange = 3f;
+        public const float BagOpenSeconds = 1f, AirdropOpenSeconds = 2f;
+
+        public static byte Equipped = SlotPistol;
+        public static byte SpecialWeaponId;
+        public static ushort SpecialDurability;
+        public static byte Bandages;
+        public static byte PistolWeaponId = 1;
+
+        public static void ReadInventory(PacketReader r)
+        {
+            Equipped = r.ReadByte();
+            SpecialWeaponId = r.ReadByte();
+            SpecialDurability = r.ReadUInt16();
+            Bandages = r.ReadByte();
+            if (Equipped == SlotSpecial && SpecialWeaponId == 0) Equipped = SlotPistol;
+            WeaponId = Equipped == SlotSpecial ? SpecialWeaponId : PistolWeaponId;
+        }
+
+        /// <summary>산탄 i의 [0,1) 난수 (시드 공유 → 사수·관찰자 같은 각도, game-spec 19.2)</summary>
+        public static float PelletRand(byte seed, int i)
+        {
+            uint h = (uint)(seed + 1) * 73856093u ^ (uint)(i + 1) * 19349663u;
+            h ^= h >> 13; h *= 0x5bd1e995u; h ^= h >> 15;
+            return (h & 0xFFFF) / 65536f;
+        }
+
+        /// <summary>산탄 i의 방향 (기준 방향 dir, 전체 확산각 spreadDeg)</summary>
+        public static UnityEngine.Vector2 PelletDir(UnityEngine.Vector2 dir, byte seed, int i, float spreadDeg)
+        {
+            if (spreadDeg <= 0) return dir;
+            float off = (PelletRand(seed, i) - 0.5f) * spreadDeg * UnityEngine.Mathf.Deg2Rad;
+            float c = UnityEngine.Mathf.Cos(off), s = UnityEngine.Mathf.Sin(off);
+            return new UnityEngine.Vector2(dir.x * c - dir.y * s, dir.x * s + dir.y * c);
+        }
     }
 }

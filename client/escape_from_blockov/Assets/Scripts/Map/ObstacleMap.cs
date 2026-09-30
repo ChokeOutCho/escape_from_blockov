@@ -150,10 +150,15 @@ namespace Blockov.Game
             var low = new Color32(170, 150, 110, 255);
             var wall = new Color32(20, 22, 26, 255);
             float scale = (float)px / Size;
-            int gridEvery = Mathf.Max(1, Mathf.RoundToInt(SectorGrid.DefaultSectorSize * 5 * scale));   // 5섹터(250m)마다 격자선
+            // 섹터(50m)마다 격자선 (전체 맵에 섹터 번호를 함께 표시)
+            var sectorOf = new int[px];
+            for (int i = 0; i < px; i++) sectorOf[i] = Mathf.FloorToInt(i / scale / SectorGrid.DefaultSectorSize);
             for (int y = 0; y < px; y++)
                 for (int x = 0; x < px; x++)
-                    cols[y * px + x] = (x % gridEvery == 0 || y % gridEvery == 0) ? gridLine : ground;
+                {
+                    bool line = (x > 0 && sectorOf[x] != sectorOf[x - 1]) || (y > 0 && sectorOf[y] != sectorOf[y - 1]);
+                    cols[y * px + x] = line ? gridLine : ground;
+                }
             foreach (var type in new[] { Low, Wall })
                 foreach (var r in Rects)
                 {

@@ -19,6 +19,7 @@ namespace Blockov.Game
         public CharacterView LocalView { get; private set; }
         public LocalPlayerController Local { get; private set; }
         public CameraRig Rig { get; private set; }
+        public ContainerManager Containers { get; private set; }
         public IEnumerable<RemoteCharacter> RemoteCharacters => _remotes.Values;
         public IReadOnlyDictionary<uint, RemoteCharacter> Remotes => _remotes;
         public List<KillFeed> Feed { get; } = new List<KillFeed>();
@@ -74,6 +75,8 @@ namespace Blockov.Game
             Rig.SnapTo(go.transform.position);
             Local.Rig = Rig;
 
+            Containers = GetComponent<ContainerManager>();
+            if (Containers == null) Containers = gameObject.AddComponent<ContainerManager>();
             if (GetComponent<GameHUD>() == null) gameObject.AddComponent<GameHUD>();
 
             net.PacketReceived += OnPacket;
@@ -156,6 +159,16 @@ namespace Blockov.Game
                     break;
                 case PacketType.SC_RANKING_TOP3: OnRanking(r); break;
                 case PacketType.SC_PLAYER_COUNT: GameSession.OnlineCount = (int)r.ReadUInt32(); break;
+                case PacketType.SC_INVENTORY:
+                    GameSession.ReadInventory(r);
+                    if (Local != null) Local.OnInventory();
+                    break;
+                case PacketType.SC_ROLL: OnRoll(r); break;
+                case PacketType.SC_HP: OnHp(r); break;
+                case PacketType.SC_CONTAINER_CREATE: if (Containers != null) Containers.OnCreate(r); break;
+                case PacketType.SC_CONTAINER_DELETE: if (Containers != null) Containers.OnDelete(r); break;
+                case PacketType.SC_CONTAINER_CONTENTS: if (Containers != null) Containers.OnContents(r); break;
+                case PacketType.SC_AIRDROP: if (Containers != null) Containers.OnAirdrop(r); break;
                 case PacketType.SC_KICK:
                     // NetworkManager가 사유를 LastError에 기록. 곧 서버가 끊는다.
                     break;
@@ -232,19 +245,39 @@ namespace Blockov.Game
             float ox = r.ReadFloat(), oz = r.ReadFloat(), dx = r.ReadFloat(), dz = r.ReadFloat();
             byte seed = r.ReadByte();
             if (!GameSession.Weapons.TryGetValue(weaponId, out var w)) return;
+            if (_remotes.TryGetValue(shooter, out var src) && src != null) src.WeaponId = weaponId;
 
-            var rng = new System.Random(seed);
             var dir = new Vector2(dx, dz);
             for (byte i = 0; i < w.Pellets; i++)
+                _observerShots.Add(Projectile.Spawn(shooter, seq, i, false, new Vector2(ox, oz), GameSession.PelletDir(dir, seed, i, w.SpreadDeg), w));
+        }
+
+        // 원격 구르기: 시작 → 도착(0.25초) 스냅샷 (game-spec 19.3)
+        void OnRoll(PacketReader r)
+        {
+            uint id = r.ReadUInt32();
+            float sx = r.ReadFloat(), sz = r.ReadFloat(), ex = r.ReadFloat(), ez = r.ReadFloat();
+            if (!_remotes.TryGetValue(id, out var rc) || rc == null) return;
+            double now = NetworkManager.Instance.EstServerNow;
+            float aim = rc.AimAngle;
+            rc.AddSnapshot(now, sx, sz, 0, 0, aim);
+            rc.AddSnapshot(now + GameSession.RollSeconds * 1000.0, ex, ez, 0, 0, aim);
+        }
+
+        // 체력 변경 (붕대 회복)
+        void OnHp(PacketReader r)
+        {
+            uint id = r.ReadUInt32();
+            ushort hp = r.ReadUInt16();
+            if (id == GameSession.MyPlayerId)
             {
-                Vector2 d = dir;
-                if (w.SpreadDeg > 0)
-                {
-                    float off = ((float)rng.NextDouble() - 0.5f) * w.SpreadDeg * Mathf.Deg2Rad;
-                    float c = Mathf.Cos(off), s = Mathf.Sin(off);
-                    d = new Vector2(dir.x * c - dir.y * s, dir.x * s + dir.y * c);
-                }
-                _observerShots.Add(Projectile.Spawn(shooter, seq, i, false, new Vector2(ox, oz), d, w));
+                GameSession.Hp = hp;
+                if (LocalView != null) LocalView.Hp = hp;
+                if (Local != null) Local.OnHealed();
+            }
+            else if (_remotes.TryGetValue(id, out var rc) && rc != null)
+            {
+                rc.Hp = hp;
             }
         }
 
