@@ -23,6 +23,9 @@
     "roll_combat_per_sec": 0.3,
     "roll_wander_chance": 0.1,
     "name_prefix": "Dummy",
+    "names_file": "dummy_names.txt",
+    "loot": true,
+    "loot_range": 50,
 
     "obstacle_map": "../../map/obstacles.bmp"
 }

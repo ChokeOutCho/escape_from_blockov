@@ -18,6 +18,7 @@
 #include <cstdarg>
 #include <vector>
 #include <algorithm>
+#include <random>
 #include <iostream>
 
 #pragma comment(lib, "ws2_32.lib")
@@ -31,6 +32,8 @@ std::atomic<int> g_targetCount{ 0 };
 std::atomic<bool> g_fireEnabled{ true };
 std::atomic<bool> g_reconnectMode{ true };
 std::atomic<int> g_connectTokens{ 0 };
+std::atomic<uint32_t> g_serverMapHash{ 0 };
+std::vector<std::u16string> g_names;
 
 namespace
 {
@@ -205,6 +208,11 @@ namespace
 		     g_targetCount.load(), g_allocated.load(),
 		     g_reconnectMode.load() ? "재접속" : "퇴장", g_fireEnabled.load() ? "ON" : "OFF",
 		     g_map.Loaded() ? "로드됨" : "없음(엄폐물 무시)");
+		{
+			uint32_t sh = g_serverMapHash.load();
+			if (sh != 0 && (!g_map.Loaded() || sh != g_map.Hash()))
+				Line(" [경고]    맵이 서버와 다름 (서버 0x%08X / 더미 0x%08X) → 이동이 거부되어 킥될 수 있음. obstacle_map 경로 확인", sh, g_map.Loaded() ? g_map.Hash() : 0u);
+		}
 		Line(" [상태]    게임중 %d   입장중 %d   사망 %d   접속중 %d   종료중 %d   대기 %d",
 		     st.inGame, st.entering, st.dead, st.connecting, st.closing, st.idle);
 		Line(" [접속]    성공 %lld (+%.0f/s)  실패 %lld   끊김 %lld (비정상 %lld)",
@@ -222,8 +230,9 @@ namespace
 		{
 			StateCounts wc = CountStates();
 			int nAll = g_allocated.load();
-			Line("           누적 사격 %lld  명중보고 %lld  명중확인 %lld  사망 %lld   약함 평균 %.2f (%.1f~%.1f)",
-			     cur.shots, cur.hitsReported, cur.hitsConfirmed, cur.deaths, nAll ? wc.weakSum / nAll : 0.0, g_cfg.weaknessMin, g_cfg.weaknessMax);
+			Line("           누적 사격 %lld  명중보고 %lld  명중확인 %lld  사망 %lld   약함 평균 %.2f (%.1f~%.1f)   특수 무기 획득 %lld",
+			     cur.shots, cur.hitsReported, cur.hitsConfirmed, cur.deaths, nAll ? wc.weakSum / nAll : 0.0, g_cfg.weaknessMin, g_cfg.weaknessMax,
+			     (long long)g_stats.specialPickups.load());
 		}
 		Line(" [검증]    위치보정 %.0f/s (누적 %lld)   킥: 타임아웃 %lld  잘못된패킷 %lld  치트의심 %lld  서버종료 %lld",
 		     rate(cur.corrections, prev.corrections), cur.corrections, cur.kicks[1], cur.kicks[2], cur.kicks[3], cur.kicks[4]);
@@ -268,6 +277,63 @@ namespace
 		}
 	}
 
+	// 실행 파일을 x64\Release에서 직접 실행한 경우 등: 작업 폴더에 설정 파일이 없으면 실행 파일 위쪽 폴더에서 찾아 그곳으로 이동
+	// (설정·엄폐물 맵·닉네임 목록·로그가 모두 server/DummyClient 기준 상대 경로이기 때문)
+	void FixWorkingDirectory(const std::string& configPath)
+	{
+		if (GetFileAttributesA(configPath.c_str()) != INVALID_FILE_ATTRIBUTES) return;
+		if (configPath.find(':') != std::string::npos || (!configPath.empty() && (configPath[0] == '\\' || configPath[0] == '/'))) return;
+		char exe[MAX_PATH];
+		DWORD n = GetModuleFileNameA(nullptr, exe, MAX_PATH);
+		if (n == 0 || n >= MAX_PATH) return;
+		std::string dir(exe, n);
+		dir = dir.substr(0, dir.find_last_of("\\/"));
+		for (const char* up : { "", "\\..", "\\..\\.." })
+		{
+			std::string d = dir + up;
+			if (GetFileAttributesA((d + "\\" + configPath).c_str()) != INVALID_FILE_ATTRIBUTES)
+			{
+				SetCurrentDirectoryA(d.c_str());
+				char cwd[MAX_PATH];
+				GetCurrentDirectoryA(MAX_PATH, cwd);
+				printf("작업 폴더 -> %s (%s 위치)\n", cwd, configPath.c_str());
+				return;
+			}
+		}
+	}
+
+	// 닉네임 목록 (UTF-8, 한 줄에 하나, # 주석). 12자(UTF-16) 넘는 이름은 자르고, 순서를 섞는다
+	void LoadNames(const std::string& path)
+	{
+		FILE* f = nullptr;
+		if (fopen_s(&f, path.c_str(), "rb") != 0 || !f) { printf("닉네임 목록 %s 없음 -> %s + 번호\n", path.c_str(), g_cfg.namePrefix.c_str()); return; }
+		std::string all;
+		char buf[4096];
+		size_t r;
+		while ((r = fread(buf, 1, sizeof(buf), f)) > 0) all.append(buf, r);
+		fclose(f);
+		if (all.size() >= 3 && (unsigned char)all[0] == 0xEF && (unsigned char)all[1] == 0xBB && (unsigned char)all[2] == 0xBF) all.erase(0, 3);
+		size_t pos = 0;
+		while (pos <= all.size())
+		{
+			size_t e = all.find('\n', pos);
+			if (e == std::string::npos) e = all.size();
+			std::string line = all.substr(pos, e - pos);
+			pos = e + 1;
+			size_t hash = line.find('#');
+			if (hash != std::string::npos) line = line.substr(0, hash);
+			while (!line.empty() && (line.back() == '\r' || line.back() == ' ' || line.back() == '\t')) line.pop_back();
+			while (!line.empty() && (line[0] == ' ' || line[0] == '\t')) line.erase(0, 1);
+			if (line.empty()) continue;
+			std::u16string name = Utf8ToU16(line);
+			if (name.size() > (size_t)NAME_LEN) name.resize(NAME_LEN);
+			g_names.push_back(name);
+		}
+		std::mt19937 rng((uint32_t)GetTickCount64());
+		std::shuffle(g_names.begin(), g_names.end(), rng);
+		printf("닉네임 목록 %s: %zu개\n", path.c_str(), g_names.size());
+	}
+
 	void DisableQuickEdit()
 	{
 		HANDLE h = GetStdHandle(STD_INPUT_HANDLE);
@@ -298,6 +364,7 @@ int main(int argc, char** argv)
 	}
 	bool headless = duration > 0;
 
+	FixWorkingDirectory(configPath);
 	if (!g_cfg.Load(configPath.c_str()))
 		printf("%s 없음 → 기본값 사용\n", configPath.c_str());
 	if (!argServer.empty())
@@ -318,12 +385,14 @@ int main(int argc, char** argv)
 
 	timeBeginPeriod(1);
 
+	LoadNames(g_cfg.namesFile);
+
 	// ---- 엄폐물 맵 ----
 	std::string err;
 	if (g_map.LoadBmp(g_cfg.obstacleMap.c_str(), err))
 		printf("obstacle map %s: wall %d, low %d, hash 0x%08X\n", g_cfg.obstacleMap.c_str(), g_map.WallCells(), g_map.LowCells(), g_map.Hash());
 	else
-		printf("[경고] 엄폐물 맵 %s 로드 실패 (%s) → 엄폐물 무시하고 이동 (서버 위치 보정이 늘어남)\n", g_cfg.obstacleMap.c_str(), err.c_str());
+		printf("[경고] 엄폐물 맵 %s 로드 실패 (%s) → 엄폐물 무시하고 이동. 서버가 이동을 거부해 더미가 킥될 수 있음\n", g_cfg.obstacleMap.c_str(), err.c_str());
 
 	// ---- 인원 ----
 	int count = argCount >= 0 ? argCount : g_cfg.count;
@@ -449,8 +518,8 @@ int main(int argc, char** argv)
 	Snapshot fin = Take();
 	printf("summary: connect %lld (fail %lld), enter ok %lld full %lld other %lld timeout %lld, disconnects %lld (unexpected %lld)\n",
 	       fin.connectOk, fin.connectFail, fin.enterOk, fin.enterFull, fin.enterOther, fin.enterTimeout, fin.disconnects, fin.unexpected);
-	printf("         shots %lld, hits reported %lld, confirmed %lld, deaths %lld, kills %lld, rolls %lld, corrections %lld, kicks %lld/%lld/%lld/%lld\n",
-	       fin.shots, fin.hitsReported, fin.hitsConfirmed, fin.deaths, fin.kills, fin.rolls, fin.corrections,
+	printf("         shots %lld, hits reported %lld, confirmed %lld, deaths %lld, kills %lld, rolls %lld, special pickups %lld, corrections %lld, kicks %lld/%lld/%lld/%lld\n",
+	       fin.shots, fin.hitsReported, fin.hitsConfirmed, fin.deaths, fin.kills, fin.rolls, (long long)g_stats.specialPickups.load(), fin.corrections,
 	       fin.kicks[1], fin.kicks[2], fin.kicks[3], fin.kicks[4]);
 	printf("         abnormal log: disconnect %lld, connect fail %lld, enter fail %lld -> %s\n",
 	       g_eventLog.Count(EventLog::DISCONNECT), g_eventLog.Count(EventLog::CONNECT_FAIL), g_eventLog.Count(EventLog::ENTER_FAIL), g_eventLog.Path().c_str());

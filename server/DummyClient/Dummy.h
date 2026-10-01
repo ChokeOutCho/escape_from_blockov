@@ -31,6 +31,7 @@ struct PendingHit
 	uint32_t shotSeq;
 	uint32_t targetId;
 	float hx, hz;
+	uint8_t pellet;
 };
 
 struct WeaponInfo
@@ -41,6 +42,16 @@ struct WeaponInfo
 	float speed = 0;
 	uint16_t intervalMs = 0;
 	float radius = 0;
+	float spreadDeg = 0;
+	uint8_t pellets = 1;
+	uint16_t durability = 0;
+	uint8_t slot = 2;
+};
+
+struct AirdropInfo
+{
+	uint32_t id;
+	float x, z;
 };
 
 class Dummy
@@ -100,7 +111,11 @@ private:
 	bool MoveStep(float dt);
 	void CombatMove(uint32_t now, float dt, float dx, float dz, float dist, float range);
 	bool UpdateRoll(uint32_t now);
-	std::string Name() const;
+	std::string Name() const;            // 로그용 (UTF-8)
+	std::u16string Name16() const;       // 프로토콜용
+	bool LootTick(uint32_t now, float dt);
+	void ResetLoot() { m_lootId = 0; m_lootStage = 0; m_lootOpenSent = false; }
+	void EquipFromInventory();
 	const char* StateName(GameState g) const;
 	uint32_t ServerNow(uint32_t now) const { return now + (uint32_t)m_clockOffset; }
 	float Rand01() { return std::uniform_real_distribution<float>(0.0f, 1.0f)(m_rng); }
@@ -129,7 +144,7 @@ private:
 	float m_lastSentVx = 0, m_lastSentVz = 0, m_lastSentAim = 0;
 	bool m_forceMove = false;
 
-	// 구르기 (game-spec 19.3, 19.10)
+	// 구르기 (game-spec 4.2, 17.5)
 	bool m_rolling = false;
 	uint32_t m_rollStart = 0, m_rollReadyAt = 0, m_nextWanderRollCheck = 0;
 	float m_rollFromX = 0, m_rollFromZ = 0, m_rollToX = 0, m_rollToZ = 0;
@@ -144,12 +159,29 @@ private:
 	uint32_t m_targetId = 0;
 	std::vector<PendingHit> m_hits;
 
-	// 강도 (game-spec 20.5)
+	// 강도 (game-spec 17.5)
 	float m_weak = 0;
 	uint32_t m_lastTargetId = 0;
 	uint32_t m_firstShotAt = 0;
 
-	// 교전 중 이동 (game-spec 21.1)
+	// 무기 (game-spec 6.1): 무기표 전체, 기본 무기 id, 인벤토리
+	WeaponInfo m_defs[8];
+	int m_defCount = 0;
+	uint8_t m_pistolId = 1;
+	uint8_t m_equipped = 2, m_specialId = 0;
+	uint16_t m_specialDur = 0;
+	bool m_switchSent = false;
+	const WeaponInfo* FindDef(uint8_t id) const { for (int i = 0; i < m_defCount; i++) if (m_defs[i].id == id) return &m_defs[i]; return nullptr; }
+
+	// 에어드랍 특수 무기 획득 (game-spec 17.5)
+	std::vector<AirdropInfo> m_airdrops;
+	std::vector<uint32_t> m_lootIgnore;
+	uint32_t m_lootId = 0;
+	int m_lootStage = 0;                // 0 없음, 1 이동, 2 정지 후 열기 대기
+	uint32_t m_lootGiveUpAt = 0, m_lootStopAt = 0, m_lootOpenAt = 0, m_lootDetourUntil = 0;
+	bool m_lootOpenSent = false;
+
+	// 교전 중 이동 (game-spec 17.5)
 	float m_strafeSide = 1.0f;
 	uint32_t m_nextStrafeSwitch = 0;
 

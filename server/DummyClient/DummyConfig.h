@@ -30,9 +30,9 @@ struct DummyConfig
 	bool fire = true;               // 사격 여부
 	float engageRange = 60.0f;      // 교전 거리 (무기 사거리 - 2 와 작은 값 사용)
 	float sprintChance = 0.3f;      // 배회 중 달리기 비율
-	// 구르기 (game-spec 19.10): 교전 중 쿨타임 후 초당 확률(적의 옆 방향), 배회 중 쿨타임마다 확률(진행 방향)
+	// 구르기 (game-spec 17.5): 교전 중 쿨타임 후 초당 확률(적의 옆 방향), 배회 중 쿨타임마다 확률(진행 방향)
 	bool roll = true;
-	// 더미 강도 (game-spec 20.5): 더미마다 약함 w를 [weaknessMin, weaknessMax]에서 균등 무작위로 1회 뽑아
+	// 더미 강도 (game-spec 17.5): 더미마다 약함 w를 [weaknessMin, weaknessMax]에서 균등 무작위로 1회 뽑아
 	// 반응 지연 = reactionBaseMs × w, 연사 간격 × (1 + w), 조준 오차 ±aimErrorMaxDeg × w, 리드 사격 확률 1 - w
 	float weaknessMin = 0.0f;
 	float weaknessMax = 1.0f;
@@ -43,7 +43,11 @@ struct DummyConfig
 	int rollCooldownMs = 3000;      // 서버 roll_cooldown_ms
 	int rollMs = 250;               // 서버 roll_ms
 	float rollSpeedMult = 3.0f;     // 서버 roll_speed_mult
-	std::string namePrefix = "Dummy";   // 이름 = 접두사 + 번호 (12자 이내)
+	std::string namePrefix = "Dummy";   // 닉네임 목록이 없을 때 이름 = 접두사 + 번호 (12자 이내)
+	std::string namesFile = "dummy_names.txt";   // 닉네임 목록 (UTF-8, 한 줄에 하나)
+	float lootRange = 50.0f;            // 에어드랍 인식 거리 (교전 중이 아닐 때 특수 무기를 가지러 감)
+	bool loot = true;
+	int airdropOpenMs = 2000;           // 서버 airdrop_open_ms
 
 	// 서버와 같은 엄폐물 맵 (없으면 엄폐물 무시하고 이동 → 위치 보정이 늘어난다)
 	std::string obstacleMap = "../../map/obstacles.bmp";
@@ -118,6 +122,10 @@ private:
 		else if (k == "roll_ms") rollMs = n;
 		else if (k == "roll_speed_mult") rollSpeedMult = fl;
 		else if (k == "name_prefix") namePrefix = v;
+		else if (k == "names_file") namesFile = v;
+		else if (k == "loot_range") lootRange = fl;
+		else if (k == "loot") loot = (v == "true" || v == "1");
+		else if (k == "airdrop_open_ms") airdropOpenMs = n;
 		else if (k == "obstacle_map") obstacleMap = v;
 	}
 };

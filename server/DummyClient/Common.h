@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <cstring>
 #include <string>
+#include <vector>
 
 #include "DummyConfig.h"
 #include "../GameServer/GameProtocol.h"
@@ -37,7 +38,7 @@ struct Stats
 	std::atomic<long long> enterOk{ 0 }, enterFull{ 0 }, enterOther{ 0 }, enterTimeout{ 0 };
 	std::atomic<long long> corrections{ 0 };
 	std::atomic<long long> kicks[5]{};          // [1]타임아웃 [2]잘못된 패킷 [3]치트 의심 [4]서버 종료
-	std::atomic<long long> shots{ 0 }, hitsReported{ 0 }, hitsConfirmed{ 0 }, deaths{ 0 }, kills{ 0 }, rolls{ 0 };
+	std::atomic<long long> shots{ 0 }, hitsReported{ 0 }, hitsConfirmed{ 0 }, deaths{ 0 }, kills{ 0 }, rolls{ 0 }, specialPickups{ 0 };
 	std::atomic<long long> rttSum{ 0 }, rttCount{ 0 };
 	std::atomic<int> rttMax{ 0 };
 
@@ -57,6 +58,7 @@ extern std::atomic<int> g_targetCount;      // 목표 인원 (앞 번호부터 활성)
 extern std::atomic<bool> g_fireEnabled;
 extern std::atomic<bool> g_reconnectMode;   // true: 사망 시 재접속, false: 퇴장
 extern std::atomic<int> g_connectTokens;    // 초당 접속 수 제한용 토큰
+extern std::atomic<uint32_t> g_serverMapHash;  // SC_ENTER_GAME의 서버 맵 해시 (대시보드에서 더미 맵과 비교)
 
 inline bool TakeConnectToken()
 {
@@ -81,6 +83,11 @@ public:
 	{
 		for (int i = 0; i < NAME_LEN; i++)
 			W16(i < (int)ascii.size() ? (uint16_t)(unsigned char)ascii[i] : 0);
+	}
+	void WName16(const std::u16string& name)
+	{
+		for (int i = 0; i < NAME_LEN; i++)
+			W16(i < (int)name.size() ? (uint16_t)name[i] : 0);
 	}
 
 	// 헤더를 채운 뒤 전체 바이트 반환
@@ -135,3 +142,53 @@ private:
 	int m_pos = 0;
 	bool m_ok = true;
 };
+
+////////////////////////////////////////////////////////////////////////
+// UTF-8 <-> UTF-16 (닉네임 목록 파일은 UTF-8, 프로토콜 이름은 UTF-16)
+////////////////////////////////////////////////////////////////////////
+inline std::u16string Utf8ToU16(const std::string& s)
+{
+	std::u16string out;
+	for (size_t i = 0; i < s.size();)
+	{
+		unsigned char c = (unsigned char)s[i];
+		uint32_t cp; int n;
+		if (c < 0x80) { cp = c; n = 1; }
+		else if ((c >> 5) == 6) { cp = c & 0x1F; n = 2; }
+		else if ((c >> 4) == 14) { cp = c & 0x0F; n = 3; }
+		else if ((c >> 3) == 30) { cp = c & 0x07; n = 4; }
+		else { i++; continue; }
+		if (i + n > s.size()) break;
+		for (int k = 1; k < n; k++) cp = (cp << 6) | ((unsigned char)s[i + k] & 0x3F);
+		i += n;
+		if (cp >= 0x10000) { cp -= 0x10000; out += (char16_t)(0xD800 + (cp >> 10)); out += (char16_t)(0xDC00 + (cp & 0x3FF)); }
+		else out += (char16_t)cp;
+	}
+	return out;
+}
+
+inline std::string U16ToUtf8(const std::u16string& s)
+{
+	std::string out;
+	for (size_t i = 0; i < s.size(); i++)
+	{
+		uint32_t cp = s[i];
+		if (cp >= 0xD800 && cp < 0xDC00 && i + 1 < s.size()) { cp = 0x10000 + ((cp - 0xD800) << 10) + (s[i + 1] - 0xDC00); i++; }
+		if (cp < 0x80) out += (char)cp;
+		else if (cp < 0x800) { out += (char)(0xC0 | (cp >> 6)); out += (char)(0x80 | (cp & 0x3F)); }
+		else if (cp < 0x10000) { out += (char)(0xE0 | (cp >> 12)); out += (char)(0x80 | ((cp >> 6) & 0x3F)); out += (char)(0x80 | (cp & 0x3F)); }
+		else { out += (char)(0xF0 | (cp >> 18)); out += (char)(0x80 | ((cp >> 12) & 0x3F)); out += (char)(0x80 | ((cp >> 6) & 0x3F)); out += (char)(0x80 | (cp & 0x3F)); }
+	}
+	return out;
+}
+
+// 닉네임 목록 (dummy_names.txt, main에서 로드 후 섞음). 비어 있으면 name_prefix + 번호
+extern std::vector<std::u16string> g_names;
+
+// 산탄 i의 [0,1) 난수: 클라 GameSession.PelletRand와 같은 식 (game-spec 5.3)
+inline float PelletRand(uint8_t seed, int i)
+{
+	uint32_t h = (uint32_t)(seed + 1) * 73856093u ^ (uint32_t)(i + 1) * 19349663u;
+	h ^= h >> 13; h *= 0x5bd1e995u; h ^= h >> 15;
+	return (float)(h & 0xFFFF) / 65536.0f;
+}

@@ -100,19 +100,33 @@ void Dummy::OnConnected(uint32_t now)
 	game = GameState::Entering;
 	m_enterDeadline = now + ENTER_TIMEOUT_MS;
 
-	std::string name = Name();
 	lastKick = 0;
 	PacketWriter w(PT_CS_ENTER_GAME);
 	w.W32(GAME_PROTOCOL_VERSION);
-	w.WName(name);
+	w.WName16(Name16());
 	Send(w);
+}
+
+// 닉네임: dummy_names.txt(섞인 순서)에서 번호대로, 목록보다 많으면 목록 이름 + 번호 (12자 이내)
+std::u16string Dummy::Name16() const
+{
+	if (g_names.empty())
+	{
+		std::string name = g_cfg.namePrefix + std::to_string(index + 1);
+		if (name.size() > (size_t)NAME_LEN) name = name.substr(name.size() - NAME_LEN);
+		return std::u16string(name.begin(), name.end());
+	}
+	size_t n = g_names.size();
+	if ((size_t)index < n) return g_names[index];
+	std::u16string base = g_names[((size_t)index * 7919u) % n];
+	std::string num = std::to_string(index / n + 1);
+	size_t keep = std::min(base.size(), (size_t)NAME_LEN - num.size());
+	return base.substr(0, keep) + std::u16string(num.begin(), num.end());
 }
 
 std::string Dummy::Name() const
 {
-	std::string name = g_cfg.namePrefix + std::to_string(index + 1);
-	if (name.size() > (size_t)NAME_LEN) name = name.substr(name.size() - NAME_LEN);
-	return name;
+	return U16ToUtf8(Name16());
 }
 
 const char* Dummy::StateName(GameState g) const
@@ -209,8 +223,13 @@ void Dummy::OnPacket(const uint8_t* payload, int len, uint32_t now)
 		m_weaponId = r.U8();
 		uint32_t serverTime = r.U32();
 		r.Skip(NAME_LEN * 2);
-		r.U32();                        // map hash
+		uint32_t mapHash = r.U32();
 		if (r.Remain() >= 4) m_sprintMul = r.F();
+		g_serverMapHash.store(mapHash);
+		static std::atomic<bool> s_mapWarned{ false };
+		if ((!g_map.Loaded() || mapHash != g_map.Hash()) && !s_mapWarned.exchange(true))
+			g_eventLog.Write("MAP_MISMATCH", "server 0x%08X dummy 0x%08X (%s) -> moves will be rejected (move:blocked) and dummies kicked",
+				mapHash, g_map.Loaded() ? g_map.Hash() : 0u, g_map.Loaded() ? "different map" : "dummy map not loaded");
 
 		game = GameState::InGame;
 		g_stats.enterOk++;
@@ -233,6 +252,13 @@ void Dummy::OnPacket(const uint8_t* payload, int len, uint32_t now)
 		m_rolling = false;
 		m_rollReadyAt = now + 1000;
 		m_nextWanderRollCheck = now + 1000;
+		// 무기·인벤토리·에어드랍 초기화 (입장마다 권총으로 시작)
+		m_pistolId = m_weaponId;
+		m_equipped = 2; m_specialId = 0; m_specialDur = 0; m_switchSent = false;
+		m_defCount = 0;
+		m_airdrops.clear();
+		m_lootIgnore.clear();
+		ResetLoot();
 		return;
 	}
 	case PT_SC_WEAPON_DEFS:
@@ -243,10 +269,72 @@ void Dummy::OnPacket(const uint8_t* payload, int len, uint32_t now)
 			WeaponInfo w;
 			w.id = r.U8(); w.damage = r.U16(); w.range = r.F(); w.speed = r.F();
 			w.intervalMs = r.U16(); w.radius = r.F();
-			r.U16(); r.U16(); r.F(); r.U8(); r.U8();   // magazine, reload, spread, pellets, pierce
-			r.F(); r.U16(); r.U8(); r.Skip(2);         // v6: jitterDeg, durability, slot, reserved (36B)
-			if (r.Ok() && w.id == m_weaponId && w.speed > 0) { m_weapon = w; m_haveWeapon = true; }
+			r.U16(); r.U16();                          // magazine, reload
+			w.spreadDeg = r.F(); w.pellets = r.U8(); r.U8();    // spread, pellets, pierce
+			r.F(); w.durability = r.U16(); w.slot = r.U8(); r.Skip(2);   // jitterDeg, durability, slot, reserved (36B)
+			if (w.pellets < 1) w.pellets = 1;
+			if (!r.Ok() || w.speed <= 0) continue;
+			if (m_defCount < 8) m_defs[m_defCount++] = w;
+			if (w.id == m_pistolId) { m_weapon = w; m_haveWeapon = true; }
 		}
+		return;
+	}
+	case PT_SC_INVENTORY:
+	{
+		m_equipped = r.U8();
+		m_specialId = r.U8();
+		m_specialDur = r.U16();
+		r.U8();     // bandages (더미는 붕대를 쓰지 않음)
+		if (m_specialId == 0) m_switchSent = false;
+		EquipFromInventory();
+		// 특수 무기를 얻었으면 바로 1번으로 전환해 사용 (game-spec 17.5)
+		if (m_specialId != 0 && m_equipped != 1 && !m_switchSent)
+		{
+			PacketWriter w(PT_CS_SWITCH_WEAPON);
+			w.W8(1);
+			Send(w);
+			m_switchSent = true;
+			m_equipped = 1;
+			EquipFromInventory();
+			m_nextFire = now + 200;
+			g_stats.specialPickups++;
+		}
+		return;
+	}
+	case PT_SC_AIRDROP:
+	{
+		AirdropInfo a;
+		a.id = r.U32(); a.x = r.F(); a.z = r.F();
+		if (!r.Ok()) return;
+		for (auto& e : m_airdrops) if (e.id == a.id) return;
+		m_airdrops.push_back(a);
+		return;
+	}
+	case PT_SC_CONTAINER_DELETE:
+	{
+		int n = r.U8();
+		for (int i = 0; i < n && r.Ok(); i++)
+		{
+			uint32_t id = r.U32();
+			m_airdrops.erase(std::remove_if(m_airdrops.begin(), m_airdrops.end(), [id](const AirdropInfo& a) { return a.id == id; }), m_airdrops.end());
+			if (id == m_lootId) ResetLoot();
+		}
+		return;
+	}
+	case PT_SC_CONTAINER_CONTENTS:
+	{
+		uint32_t id = r.U32();
+		uint8_t special = r.U8();
+		if (!r.Ok() || id != m_lootId) return;
+		if (special != 0 && m_specialId == 0)
+		{
+			PacketWriter w(PT_CS_TAKE_ITEM);
+			w.W32(id);
+			w.W8(ITEM_SPECIAL_WEAPON);
+			Send(w);
+		}
+		m_lootIgnore.push_back(id);     // 결과와 관계없이 이 에어드랍은 다시 노리지 않음
+		ResetLoot();
 		return;
 	}
 	case PT_SC_CREATE_CHARACTERS:
@@ -402,7 +490,8 @@ void Dummy::GameTick(uint32_t now)
 	auto it = (canFire && m_targetId) ? m_remotes.find(m_targetId) : m_remotes.end();
 	if (it != m_remotes.end())
 	{
-		// 교전: 대상 주위를 옆으로 돌며 조준·사격 (game-spec 21.1)
+		// 교전: 대상 주위를 옆으로 돌며 조준·사격 (game-spec 17.5). 에어드랍 열기 대기는 처음부터 다시
+		if (m_lootStage == 2) { m_lootStage = 1; m_lootOpenSent = false; }
 		const RemotePlayer& t = it->second;
 		float age = std::min(TimeDiff(now, t.t), REMOTE_EXTRAPOLATE_MAX_MS) / 1000.0f;
 		float tx = t.x + t.vx * age, tz = t.z + t.vz * age;
@@ -433,6 +522,13 @@ void Dummy::GameTick(uint32_t now)
 	else
 	{
 		m_targetId = 0;
+	}
+
+	// 교전 중이 아니면 인식 거리 안의 에어드랍에서 특수 무기를 가져온다 (game-spec 17.5)
+	if (LootTick(now, dt))
+	{
+		SendMoveIfNeeded(now);
+		return;
 	}
 
 	Wander(now, dt);
@@ -541,7 +637,7 @@ void Dummy::SelectTarget(uint32_t now)
 
 void Dummy::Fire(uint32_t now, float tx, float tz, float tvx, float tvz)
 {
-	// 조준점: 확률 (1 - 약함)로 리드(탄 도착 시점의 대상 위치 예측), 아니면 현재 위치 (game-spec 20.5)
+	// 조준점: 확률 (1 - 약함)로 리드(탄 도착 시점의 대상 위치 예측), 아니면 현재 위치 (game-spec 17.5)
 	float dx = tx - m_x, dz = tz - m_z;
 	float flight = sqrtf(dx * dx + dz * dz) / m_weapon.speed;
 	float ax = tx, az = tz;
@@ -556,6 +652,7 @@ void Dummy::Fire(uint32_t now, float tx, float tz, float tvx, float tvz)
 	float ux = dx / dist, uz = dz / dist;
 	float c = cosf(err), sn = sinf(err);
 	float fx = ux * c - uz * sn, fz = ux * sn + uz * c;
+	uint8_t seed = (uint8_t)RandInt(0, 255);
 
 	// ViewTime: 내가 알고 있는 대상 위치에 해당하는 서버 시각 (= 추정 서버 시각 - 편도 지연)
 	int oneWay = m_bestRtt < (1 << 29) ? m_bestRtt / 2 : 0;
@@ -568,29 +665,138 @@ void Dummy::Fire(uint32_t now, float tx, float tz, float tvx, float tvz)
 	w.WF(m_x); w.WF(m_z);
 	w.WF(fx); w.WF(fz);
 	w.W32(viewTime);
-	w.W16(0);
+	w.W8(seed);
+	w.W8(0);
 	Send(w);
 	g_stats.shots++;
 
 	// 연사 간격 × 1.1(서버 토큰 버킷 여유) × (1 + 약함)
 	m_nextFire = now + (uint32_t)(m_weapon.intervalMs * 1.1f * (1.0f + m_weak)) + (uint32_t)RandInt(0, 20);
 
-	// 실제 탄 경로로 명중 판정: 탄 도착 시점의 대상 예상 위치 P와 발사 직선의 최근접점
+	// 산탄마다 실제 탄 경로로 명중 판정: 탄 도착 시점의 대상 예상 위치 P와 발사 직선의 최근접점 (산탄 각도는 클라와 같은 시드 식)
 	float px = tx + tvx * flight, pz = tz + tvz * flight;
-	float s = (px - m_x) * fx + (pz - m_z) * fz;
-	if (s <= 0 || s > m_weapon.range) return;
-	float cx = m_x + fx * s, cz = m_z + fz * s;
-	float ex = px - cx, ez = pz - cz;
 	float hitR = m_radius + m_weapon.radius;
-	if (ex * ex + ez * ez > hitR * hitR) return;                 // 빗나감 → 보고하지 않음
-	if (g_map.SegmentBlocked(m_x, m_z, cx, cz, true)) return;
+	for (int i = 0; i < m_weapon.pellets; i++)
+	{
+		float pdx = fx, pdz = fz;
+		if (m_weapon.spreadDeg > 0)
+		{
+			float off = (PelletRand(seed, i) - 0.5f) * m_weapon.spreadDeg * PI_F / 180.0f;
+			float oc = cosf(off), os = sinf(off);
+			pdx = fx * oc - fz * os; pdz = fx * os + fz * oc;
+		}
+		float sproj = (px - m_x) * pdx + (pz - m_z) * pdz;
+		if (sproj <= 0 || sproj > m_weapon.range) continue;
+		float cx = m_x + pdx * sproj, cz = m_z + pdz * sproj;
+		float ex = px - cx, ez = pz - cz;
+		if (ex * ex + ez * ez > hitR * hitR) continue;              // 빗나감 → 보고하지 않음
+		if (g_map.SegmentBlocked(m_x, m_z, cx, cz, true)) continue;
 
-	PendingHit h;
-	h.due = now + (uint32_t)(s / m_weapon.speed * 1000.0f) + 20;
-	h.shotSeq = m_shotSeq;
-	h.targetId = m_targetId;
-	h.hx = cx; h.hz = cz;
-	m_hits.push_back(h);
+		PendingHit h;
+		h.due = now + (uint32_t)(sproj / m_weapon.speed * 1000.0f) + 20;
+		h.shotSeq = m_shotSeq;
+		h.targetId = m_targetId;
+		h.hx = cx; h.hz = cz;
+		h.pellet = (uint8_t)i;
+		m_hits.push_back(h);
+	}
+
+	// 특수 무기 내구도 (서버와 같은 규칙: 0이 되면 사라지고 권총으로)
+	if (m_equipped == 1 && m_weapon.durability > 0)
+	{
+		if (m_specialDur > 0) m_specialDur--;
+		if (m_specialDur == 0) { m_specialId = 0; m_equipped = 2; m_switchSent = false; EquipFromInventory(); }
+	}
+}
+
+// 장착 슬롯에 맞춰 현재 무기 설정 (1 특수 무기 / 2 기본 무기)
+void Dummy::EquipFromInventory()
+{
+	const WeaponInfo* w = (m_equipped == 1 && m_specialId != 0) ? FindDef(m_specialId) : FindDef(m_pistolId);
+	if (w) { m_weapon = *w; m_haveWeapon = true; }
+}
+
+// 에어드랍 특수 무기 획득 (game-spec 17.5). 이동·정지 중이면 true (배회하지 않음)
+bool Dummy::LootTick(uint32_t now, float dt)
+{
+	if (!g_cfg.loot || m_specialId != 0 || m_airdrops.empty()) { if (m_lootId) ResetLoot(); return false; }
+
+	const AirdropInfo* target = nullptr;
+	if (m_lootId)
+	{
+		for (auto& a : m_airdrops) if (a.id == m_lootId) target = &a;
+		if (!target || TimeDiff(now, m_lootGiveUpAt) >= 0)
+		{
+			if (target) m_lootIgnore.push_back(m_lootId);   // 시간 안에 못 감 → 포기
+			ResetLoot();
+			return false;
+		}
+	}
+	else
+	{
+		float best = g_cfg.lootRange * g_cfg.lootRange;
+		for (auto& a : m_airdrops)
+		{
+			if (std::find(m_lootIgnore.begin(), m_lootIgnore.end(), a.id) != m_lootIgnore.end()) continue;
+			float d2 = (a.x - m_x) * (a.x - m_x) + (a.z - m_z) * (a.z - m_z);
+			if (d2 <= best) { best = d2; target = &a; }
+		}
+		if (!target) return false;
+		m_lootId = target->id;
+		m_lootStage = 1;
+		m_lootGiveUpAt = now + 30000;
+	}
+
+	float dx = target->x - m_x, dz = target->z - m_z;
+	float d = sqrtf(dx * dx + dz * dz);
+	if (m_lootStage == 1)
+	{
+		if (d > 1.5f)
+		{
+			// 직진, 막히면 잠시 옆으로 돌아간다
+			if (TimeDiff(now, m_lootDetourUntil) >= 0)
+			{
+				m_vx = dx / d * m_moveSpeed;
+				m_vz = dz / d * m_moveSpeed;
+			}
+			m_aim = ToAim(m_vx, m_vz);
+			if (!MoveStep(dt))
+			{
+				float side = Rand01() < 0.5f ? 1.0f : -1.0f;
+				float a = atan2f(dz, dx) + side * (PI_F * 0.5f + (Rand01() - 0.5f) * 0.8f);
+				m_vx = cosf(a) * m_moveSpeed;
+				m_vz = sinf(a) * m_moveSpeed;
+				m_lootDetourUntil = now + 600 + (uint32_t)RandInt(0, 600);
+				m_forceMove = true;
+			}
+			return true;
+		}
+		// 도착: 멈추고 열기 시간(2초)만큼 정지
+		m_vx = m_vz = 0;
+		m_forceMove = true;
+		m_lootStage = 2;
+		m_lootStopAt = now;
+		m_lootOpenSent = false;
+		return true;
+	}
+
+	// m_lootStage == 2: 정지 대기 → CS_OPEN_CONTAINER → SC_CONTAINER_CONTENTS에서 획득 요청
+	m_vx = m_vz = 0;
+	if (!m_lootOpenSent && TimeDiff(now, m_lootStopAt) >= g_cfg.airdropOpenMs + 300)
+	{
+		PacketWriter w(PT_CS_OPEN_CONTAINER);
+		w.W32(m_lootId);
+		Send(w);
+		m_lootOpenSent = true;
+		m_lootOpenAt = now;
+	}
+	else if (m_lootOpenSent && TimeDiff(now, m_lootOpenAt) > 2000)
+	{
+		// 응답 없음(정지 판정 실패 등) → 다시 정지부터
+		m_lootStopAt = now;
+		m_lootOpenSent = false;
+	}
+	return true;
 }
 
 void Dummy::FlushHits(uint32_t now)
@@ -608,8 +814,7 @@ void Dummy::FlushHits(uint32_t now)
 		if (m_remotes.find(h.targetId) == m_remotes.end()) continue;     // 이미 사망/시야 이탈
 		if (count >= MAX_HIT_ITEMS) { m_hits[keep++] = h; continue; }
 		char* p = items + count * LEN_HIT_ITEM;
-		uint8_t pellet = 0;
-		memcpy(p, &h.shotSeq, 4); memcpy(p + 4, &pellet, 1); memcpy(p + 5, &h.targetId, 4);
+		memcpy(p, &h.shotSeq, 4); memcpy(p + 4, &h.pellet, 1); memcpy(p + 5, &h.targetId, 4);
 		memcpy(p + 9, &h.hx, 4); memcpy(p + 13, &h.hz, 4);
 		count++;
 	}
@@ -681,7 +886,7 @@ void Dummy::Wander(uint32_t now, float dt)
 	}
 }
 
-// 교전 중 이동: 대상의 옆 방향(1~3초마다 좌우 전환)으로 걷고, 너무 가까우면 뒤로 / 멀면 앞으로 (game-spec 21.1)
+// 교전 중 이동: 대상의 옆 방향(1~3초마다 좌우 전환)으로 걷고, 너무 가까우면 뒤로 / 멀면 앞으로 (game-spec 17.5)
 void Dummy::CombatMove(uint32_t now, float dt, float dx, float dz, float dist, float range)
 {
 	if (TimeDiff(now, m_nextStrafeSwitch) >= 0)
