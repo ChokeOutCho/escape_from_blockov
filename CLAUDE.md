@@ -26,7 +26,7 @@ WebGL 빌드 2.5D PvP 슈팅 게임(동시 50인) 클라이언트(`client/`)와 
 - 게이트웨이: `server/gateway/index.js` (WS 8080 → TCP 10301)
 - 엄폐물 맵: `map/obstacles.bmp` (1픽셀 = 1m, 검정 = 벽, 회색 = 낮은 엄폐물). 수정 후 서버 재시작 + Unity `Blockov/Map/Import Obstacles (default BMP)` + WebGL 재빌드
 - 섹터: 50m × 30×30 = 월드 1500m (`SectorGrid.cs` / 서버 `ObstacleMap.h`의 `MapConst`). 방 정원 300
-- 아이템(v0.8, 명세 19장): 슬롯 1 특수 총(샷건·저격총, 내구도) / 2 권총 / 3 붕대, Space 구르기, F 가방·에어드랍. 무기는 `weapons.txt`(15열: … jitterDeg durability slot). 수치는 `game_config.txt`(airdrop_*, bag_*, roll_*, bandage_* 등)
+- 아이템(v0.8, 명세 19장): 슬롯 1 특수 무기(샷건·저격총, 내구도) / 2 권총 / 3 붕대, Space 구르기, F 가방·에어드랍. 무기는 `weapons.txt`(15열: … jitterDeg durability slot). 수치는 `game_config.txt`(airdrop_*, bag_*, roll_*, bandage_* 등)
   - 클라는 구르기·붕대·상호작용 시간(0.25/3/2초, 2.5m, 1/2초)을 `GameSession` 상수로 가지고 있다. 서버 설정을 바꾸면 함께 바꿀 것
   - 서버 기능 테스트: `test/item` 설정(에어드랍 3초 주기) + `node test/item_test.js 127.0.0.1 10502`, 기본: `test/run` + `bot_test.js` (10501)
 - 클라: `client/escape_from_blockov` — 씬 Title(0) → TestArena(1), 스크립트 `Assets/Scripts/Network`, `Assets/Scripts/Game`, `Assets/Scripts/Map`, 에디터 도구 `Assets/Editor`
