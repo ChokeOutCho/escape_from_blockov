@@ -1,4 +1,4 @@
-# escape_from_blockov 게임 명세서 v0.11
+# escape_from_blockov 게임 명세서 v0.12
 
 > 작성일: 2026-09-30
 > 대상: Unity 6000.6.3f1 클라이언트(`client/escape_from_blockov`), NetLib 기반 게임 서버(`server/`), WS↔TCP 게이트웨이(1단계 한정, `server/gateway/`)
@@ -684,13 +684,42 @@ sequenceDiagram
    - `|Hit - P| ≤ CharacterRadius + W.ProjectileRadius + hit_tolerance`
 9. **엄폐**: `S.Origin → Hit` 선분이 **벽** 칸을 지나면 거부(`SegmentBlocked`, 총알 모드 — 낮은 엄폐물은 통과).
 
-모두 통과 → `T.HP -= W.Damage`, `SC_DAMAGE`. 실패 항목은 조용히 무시, 위반 카운트 증가(10초 내 20회 → `SC_KICK(CHEAT_SUSPECT)`).
+모두 통과 → `T.HP -= W.Damage`, `SC_DAMAGE`. 실패 항목은 조용히 무시하고, **위반으로 셀 항목만** 부정 카운트 증가(10초 내 20회 → `SC_KICK(CHEAT_SUSPECT)`).
+- **세지 않는 거부(v0.12)**: 정상 플레이에서도 생기는 경우 — 대상이 이미 죽음·퇴장(4), 대상이 시야 밖(4), 보고 시한 초과(5), 대상 이력이 아직 없는 시각(8), 사격 기록이 없지만 seq ≤ 마지막 사격(서버가 거부했거나 오래된 사격). 보낸 적 없는 미래 seq는 위반.
 한 패킷 안에서 앞 항목으로 대상이 죽었으면 뒤 항목은 무시(4번에서 걸림).
 
 **특성 / 한계**
 - 사수 기준 판정(favor the shooter): 피해자 입장에서는 이미 피했다고 느낀 탄에 맞을 수 있다. 되감기 한도 `max_rewind_ms`로 제한.
 - 서버 이력 시각은 "대상의 이동 패킷이 서버에 도착한 시각"이므로 대상의 편도 지연만큼 오차가 있다 → `hit_tolerance`로 흡수.
 - ViewTime을 조작해도 되감기 한도(500ms) 안의 이득만 가능.
+
+### 10.4 서버가 연결을 끊는 조건 전체 · 위반 카운트 · 킥 로그 (v0.12)
+
+| 단계 | 조건 | 처리 |
+|---|---|---|
+| NetLib | 헤더 Code ≠ 119, Len > 512 | 즉시 끊음 |
+| NetLib | 완성 패킷 없이 recv 완료 10회 연속(`max_recvPostCnt`) | 즉시 끊음 |
+| NetLib | 한 Content 틱 동안 세션 수신 누적 > 2047B | 즉시 끊음 |
+| NetLib | 세션 송신 큐 > `sendbuf`(1000개) | 즉시 끊음(SEND_FULL) |
+| 입장 | 접속 후 `enter_timeout_ms`(10초) 안에 CS_ENTER_GAME 없음 | `SC_KICK(TIMEOUT)` 후 0.3초 |
+| 입장 | 입장 전 다른 패킷·길이 불일치 | `SC_KICK(INVALID_PACKET)` 후 0.3초 |
+| 입장 | 버전 불일치 / 만원 | `SC_ENTER_GAME(Result)` 후 1초 |
+| 게임 | 알 수 없는 타입·패킷별 길이 불일치 | `SC_KICK(INVALID_PACKET)` 후 0.3초 |
+| 게임 | 마지막 수신 후 `heartbeat_timeout_ms`(3분) | `SC_KICK(TIMEOUT)` 후 0.3초 |
+| 게임 | **이동 위반 5초 10회** | `SC_KICK(CHEAT_SUSPECT)` 후 0.3초 |
+| 게임 | **부정 행위 10초 20회** | `SC_KICK(CHEAT_SUSPECT)` 후 0.3초 |
+| 게임 | 사망 | `SC_DEATH_RESULT` 후 3초 |
+
+위반 종류(`ViolationKind`, GamePlayer.h):
+
+| 카운터 | 종류 |
+|---|---|
+| 이동(5초 10회) | `move:value`(NaN 등), `move:speed`, `move:blocked`(엄폐물), `move:budget`, `roll:cooldown`(쿨타임 중 구르기) |
+| 부정(10초 20회) | 사격 `fire:weapon`(장착 안 한 무기), `fire:seq`, `fire:value`, `fire:dir`, `fire:origin>3m`, `fire:viewtime-future`, `fire:rate` / 명중 `hit:no-shot(future-seq)`, `hit:weapon`, `hit:pellet`, `hit:pierce`, `hit:dup-target`, `hit:self`, `hit:value`, `hit:range`, `hit:angle`, `hit:position`, `hit:wall` / 기타 `roll:dir`, `switch:slot`, `take:item` |
+
+- 구르기 후 첫 이동 보정(19.3), 구르는 중 너무 이른 사격(무시), 세지 않는 명중 거부(10.3)는 카운트하지 않는다.
+- **킥 로그**: 킥할 때 서버 로그(콘솔 + 실행 폴더 `syslogs/game_YYYYMMDD_HHMMSS.log`)에 한 줄:
+  `kick player <id> CHEAT_SUSPECT: move <기간 내 횟수>/5s last <종류>, cheat <횟수>/10s last <종류> | <종류별 누적> | ignored-hit <세지 않은 거부 수>, in-game <ms>`
 
 ---
 
@@ -1119,6 +1148,7 @@ UI는 현재 IMGUI(`UiKit`)로 구현한 1차 버전이다. 한글 표시를 위
 ---
 
 ## 변경 이력
+- v0.12 (2026-10-01): 정상 플레이에서도 생기는 명중 보고 거부(대상 사망·시야 밖·보고 시한 초과·이력 없음·거부된 사격)는 부정 카운트에서 제외(10.3), 끊는 조건 전체·위반 종류·킥 상세 로그 정리(10.4), 서버 게임 로그를 `syslogs/game_*.log` 파일로도 기록.
 - v0.11 (2026-10-01): 맵 경고·구르기 엄폐물 통과 원인(서버 `obstacle_map` 경로 오류) 수정, 붕대 회복 30, 에어드랍 2분 주기·첫 입장 즉시 생성·방 인원 30명당 1개(최대 4)·회차마다 1~남은 자리 무작위·특수 총 획득 시 즉시 제거·주황색 표시, IMGUI 글자 아래쪽 잘림 수정. (22장)
 - v0.10 (2026-10-01): 더미 이동 사격(대상 주위 스트레이프·거리 유지), 전체 맵 구역 번호(3×3 섹터 = 1구역, 1~100, 북서 1부터 행 단위) — 20.4 가장자리 좌표 대체, Esc로 맵 닫기, 맵의 조준 방향 점 제거, 붕대 사용 중 걷기 속도 절반·달리기 불가, 구르기 방향 = 키보드 이동 방향(없으면 마지막 이동 방향). 프로토콜 변화 없음. (21장)
 - v0.9 (2026-10-01): 구르기 애니메이션(앞구르기 + 먼지 잔상), 조준선 20m 고정(벽에서 끊김), 카메라 줌 `[` `]` 키, 전체 맵 휠 줌(1~8배)·드래그 이동, 지도 좌표 표기(A~AD / 1~30, 예: C7), 더미 강도(약함 w: 반응·연사·조준 오차·리드 연동). 프로토콜 변화 없음(v6). (20장)

@@ -44,4 +44,4 @@ WebGL 빌드 2.5D PvP 슈팅 게임(동시 50인) 클라이언트(`client/`)와 
 - 서버를 스크립트에서 띄울 때 표준 출력은 파일로 리다이렉트(읽지 않는 파이프 금지).
 - 런타임에 `CreatePrimitive` 등으로 만든 렌더러에는 반드시 `RuntimeMaterials.Apply()`(URP Lit 에셋)를 쓸 것. 기본 머티리얼은 WebGL 빌드에서 분홍색이 된다.
 - 프로토콜을 바꾸면 `GAME_PROTOCOL_VERSION`/`NetConst.ProtocolVersion`과 `server/GameServer/test/*.js`의 버전·길이도 함께 갱신. DummyClient는 `GameProtocol.h`를 공유하지만 패킷 파싱(`Dummy.cpp`)은 따로 고쳐야 한다.
-- 서버 코드에서 `near`/`far`/`min`/`max` 같은 이름을 지역 변수로 쓰지 말 것 (windows.h 매크로. 리눅스 스텁 빌드에서는 드러나지 않음).
+- 서버 코드에서 `near`/`far`/`min`/`max`/`IGNORE`/`ERROR` 같은 이름을 지역 변수로 쓰지 말 것 (windows.h 매크로. 리눅스 스텁 빌드에서는 드러나지 않음).
