@@ -13,7 +13,7 @@
 class GameServer : public NetLib_Server
 {
 public:
-	GameServer(const GameConfig& cfg, const WeaponTable& weapons, const SpawnTable& spawns, const ObstacleMap& obstacles);
+	GameServer(const GameConfig& cfg, const WeaponTable& weapons, const ObstacleMap& obstacles);
 
 	bool OnConnectionRequest(unsigned long IP, unsigned short port) override { return true; }
 	void OnClientJoin(unsigned long long sessionHandle, unsigned long IP, unsigned short port) override;

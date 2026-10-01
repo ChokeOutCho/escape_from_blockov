@@ -36,13 +36,13 @@ struct GameConfig
 	int defaultWeaponId = 1;
 
 	std::string weaponsFile = "weapons.txt";
-	std::string spawnsFile = "spawns.txt";
 	std::string obstacleMapFile = "../../map/obstacles.bmp";
-	int spawnOffsetRadius = 20;
 	float sprintMultiplier = 1.2f;     // Shift 달리기 속도 배율 (클라에 SC_ENTER_GAME으로 전달)
 
 	// v6 아이템·구르기·에어드랍·가방 (game-spec 6)
-	int airdropIntervalMs = 120000;   // 회차 주기 (빈 방에 첫 입장 시 즉시 1회차 후 이 주기로)
+	int airdropIntervalMs = 60000;    // 회차 주기 (빈 방에 첫 입장 시 즉시 1회차 후 이 주기로)
+	int airdropNoticeMs = 30000;      // 투하 예고: 이 시간 전에 위치를 정해 방 전체에 공개 (주기보다 길면 주기만큼)
+	int coverRegenMs = 30000;         // 파괴된 엄폐물 재생 시간
 	int airdropMax = 4;               // 방당 최대 (인원 기준 상한의 상한)
 	int airdropPlayersPer = 30;       // 방 인원 N명당 1개 (올림, 최소 1)
 	int bagLifetimeMs = 30000;
@@ -61,6 +61,7 @@ struct GameConfig
 	bool testMode = false;
 	int testSpawnSectorX = 0;
 	int testSpawnSectorY = 0;
+	int testSpawnRadius = -1;         // 테스트 모드 스폰 범위: -1 = 섹터 전체, 0 = 섹터 중심, >0 = 중심에서 반경 (m)
 
 	bool Load(const char* path)
 	{
@@ -129,11 +130,11 @@ private:
 		else if (k == "hit_tolerance") hitTolerance = fl;
 		else if (k == "default_weapon_id") defaultWeaponId = n;
 		else if (k == "weapons_file") weaponsFile = v;
-		else if (k == "spawns_file") spawnsFile = v;
 		else if (k == "obstacle_map") obstacleMapFile = v;
-		else if (k == "spawn_offset_radius") spawnOffsetRadius = n;
 		else if (k == "sprint_multiplier") sprintMultiplier = fl;
 		else if (k == "airdrop_interval_ms") airdropIntervalMs = n;
+		else if (k == "airdrop_notice_ms") airdropNoticeMs = n;
+		else if (k == "cover_regen_ms") coverRegenMs = n;
 		else if (k == "airdrop_max") airdropMax = n;
 		else if (k == "airdrop_players_per") airdropPlayersPer = n;
 		else if (k == "bag_lifetime_ms") bagLifetimeMs = n;
@@ -150,5 +151,6 @@ private:
 		else if (k == "test_mode") testMode = ToBool(v);
 		else if (k == "test_spawn_sector_x") testSpawnSectorX = n;
 		else if (k == "test_spawn_sector_y") testSpawnSectorY = n;
+		else if (k == "test_spawn_radius") testSpawnRadius = n;
 	}
 };

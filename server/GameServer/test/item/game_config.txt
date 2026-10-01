@@ -21,14 +21,17 @@
     "hit_tolerance": 1.0,
     "default_weapon_id": 1,
     "weapons_file": "weapons.txt",
-    "spawns_file": "spawns.txt",
     "obstacle_map": "none.bmp",
-    "spawn_offset_radius": 12,
 
     "airdrop_interval_ms": 3000,
+    "airdrop_notice_ms": 1000,
     "airdrop_max": 2,
     "airdrop_players_per": 1,
     "bag_lifetime_ms": 8000,
     "start_bandages": 2,
-    "max_bandages": 5
+    "max_bandages": 5,
+    "test_mode": true,
+    "test_spawn_sector_x": 10,
+    "test_spawn_sector_y": 10,
+    "test_spawn_radius": 12
 }

@@ -79,7 +79,7 @@ class Bot {
     }
     return null;
   }
-  async enter(name) { this.send(new W(T.CS_ENTER_GAME).u32(6).name(name)); this.me = await this.wait(T.SC_ENTER_GAME); return this.me; }
+  async enter(name) { this.send(new W(T.CS_ENTER_GAME).u32(7).name(name)); this.me = await this.wait(T.SC_ENTER_GAME); return this.me; }
   now() { return Date.now() - this.t0; }
 }
 

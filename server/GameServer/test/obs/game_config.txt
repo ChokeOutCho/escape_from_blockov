@@ -21,7 +21,9 @@
     "hit_tolerance": 1.0,
     "default_weapon_id": 1,
     "weapons_file": "weapons.txt",
-    "spawns_file": "spawns.txt",
     "obstacle_map": "test_map.bmp",
-    "spawn_offset_radius": 0
+    "test_mode": true,
+    "test_spawn_sector_x": 10,
+    "test_spawn_sector_y": 10,
+    "test_spawn_radius": 0
 }

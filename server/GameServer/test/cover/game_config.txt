@@ -1,5 +1,5 @@
 {
-    "port": 10501,
+    "port": 10503,
     "workerTH_Pool_size": 8,
     "concurrentTH_size": 8,
     "maxofsession": 1000,
@@ -14,16 +14,17 @@
     "enter_timeout_ms": 2000,
     "heartbeat_timeout_ms": 180000,
     "death_disconnect_ms": 3000,
-    "move_speed": 12.0,
+    "move_speed": 60.0,
     "character_radius": 0.5,
     "max_hp": 100,
     "max_rewind_ms": 500,
     "hit_tolerance": 1.0,
     "default_weapon_id": 1,
     "weapons_file": "weapons.txt",
-    "obstacle_map": "none.bmp",
+    "cover_regen_ms": 3000,
+    "obstacle_map": "cover_map.bmp",
     "test_mode": true,
     "test_spawn_sector_x": 10,
     "test_spawn_sector_y": 10,
-    "test_spawn_radius": 12
+    "test_spawn_radius": 0
 }

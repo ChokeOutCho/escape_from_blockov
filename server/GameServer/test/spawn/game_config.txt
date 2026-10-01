@@ -1,5 +1,5 @@
 {
-    "port": 10501,
+    "port": 10504,
     "workerTH_Pool_size": 8,
     "concurrentTH_size": 8,
     "maxofsession": 1000,
@@ -21,9 +21,9 @@
     "hit_tolerance": 1.0,
     "default_weapon_id": 1,
     "weapons_file": "weapons.txt",
-    "obstacle_map": "none.bmp",
-    "test_mode": true,
-    "test_spawn_sector_x": 10,
-    "test_spawn_sector_y": 10,
-    "test_spawn_radius": 12
+    "airdrop_interval_ms": 4000,
+    "airdrop_notice_ms": 2000,
+    "airdrop_max": 4,
+    "airdrop_players_per": 1,
+    "obstacle_map": "none.bmp"
 }

@@ -1,6 +1,6 @@
 #pragma once
 ////////////////////////////////////////////////////////////////////////
-// 불변 게임 데이터: 무기 테이블(weapons.txt), 스폰 목록(spawns.txt), 맵 상수.
+// 불변 게임 데이터: 무기 테이블(weapons.txt), 맵 상수.
 // 로드 후 읽기 전용 → 모든 Content가 락 없이 공유.
 ////////////////////////////////////////////////////////////////////////
 #include <vector>
@@ -49,21 +49,4 @@ public:
 
 private:
 	std::vector<WeaponDef> m_defs;
-};
-
-struct SpawnPoint
-{
-	int sx, sy;
-	float x, z;     // 섹터 중심
-};
-
-class SpawnTable
-{
-public:
-	// 형식: 한 줄에 "sx sy" (# 주석)
-	bool Load(const char* path);
-	const std::vector<SpawnPoint>& All() const { return m_spawns; }
-
-private:
-	std::vector<SpawnPoint> m_spawns;
 };

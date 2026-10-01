@@ -8,7 +8,7 @@
 ////////////////////////////////////////////////////////////////////////
 #include <cstdint>
 
-const uint32_t GAME_PROTOCOL_VERSION = 6;   // v3: SC_ENTER_GAME에 MapHash, v4: SprintMultiplier, v5: SC_PLAYER_COUNT, v6: 아이템·구르기·에어드랍·가방
+const uint32_t GAME_PROTOCOL_VERSION = 7;   // v6: 아이템·구르기·에어드랍·가방, v7: 파괴 가능 엄폐물·에어드랍 예고·스폰 플래그
 const int NAME_LEN = 12;                // WCHAR Name[12] (UTF-16LE, 24B)
 
 // 접두사 PT_: windows.h의 SC_MOVE/SC_CLOSE 등(WM_SYSCOMMAND) 매크로와 충돌을 피하기 위함
@@ -18,14 +18,14 @@ enum en_GAME_PACKET_TYPE : uint16_t
 	PT_CS_ENTER_GAME = 3000,   // UINT32 ProtocolVersion, WCHAR Name[12]                                   (30B)
 	PT_CS_MOVE = 3001,         // float PosX,PosZ,VelX,VelZ,AimAngle, UINT16 MoveSeq                       (24B)
 	PT_CS_FIRE = 3002,         // UINT32 ShotSeq, BYTE WeaponID, float OX,OZ,DX,DZ, UINT32 ViewTimeMs, BYTE SpreadSeed, BYTE _r (29B)
-	PT_CS_HIT_REPORT = 3003,   // BYTE Count, {UINT32 ShotSeq, BYTE Pellet, UINT32 TargetID, float HX,HZ}[n] (3+17n)
+	PT_CS_HIT_REPORT = 3003,   // BYTE Count, {UINT32 ShotSeq, BYTE Pellet, UINT32 TargetID(또는 0x80000000|CoverId), float HX,HZ}[n] (3+17n)
 	PT_CS_PING = 3004,         // UINT32 ClientTimeMs                                                      (6B)
 	PT_CS_HEARTBEAT = 3005,    // -                                                                        (2B)
 	PT_CS_ROLL = 3006,         // float StartX,StartZ,DirX,DirZ                                            (18B)
-	PT_CS_SWITCH_WEAPON = 3007,// BYTE Slot(1 특수 총, 2 권총)                                             (3B)
+	PT_CS_SWITCH_WEAPON = 3007,// BYTE Slot(1 특수 무기, 2 기본 무기)                                       (3B)
 	PT_CS_USE_BANDAGE = 3008,  // -                                                                        (2B)
 	PT_CS_OPEN_CONTAINER = 3009,// UINT32 ContainerId                                                      (6B)
-	PT_CS_TAKE_ITEM = 3010,    // UINT32 ContainerId, BYTE Item(1 특수 총, 3 붕대)                         (7B)
+	PT_CS_TAKE_ITEM = 3010,    // UINT32 ContainerId, BYTE Item(1 특수 무기, 3 붕대)                       (7B)
 
 	// S -> C
 	PT_SC_ENTER_GAME = 3100,
@@ -50,6 +50,9 @@ enum en_GAME_PACKET_TYPE : uint16_t
 	PT_SC_CONTAINER_DELETE = 3119, // BYTE Count, UINT32 Id[n]                                             (3+4n)
 	PT_SC_CONTAINER_CONTENTS = 3120, // UINT32 Id, BYTE SpecialWeaponId, WORD Durability, BYTE Bandages    (10B)
 	PT_SC_AIRDROP = 3121,       // UINT32 Id, float X,Z, BYTE SectorX,SectorY, BYTE IsNew                  (17B)
+	PT_SC_COVER_HP = 3122,      // WORD CoverId, BYTE Hp                                                   (5B)
+	PT_SC_COVER_STATE = 3123,   // BYTE Count, {WORD CoverId, BYTE Destroyed, UINT32 DestroyedAtMs, WORD RegenSec}[n] (3+9n)
+	PT_SC_AIRDROP_FORECAST = 3124, // UINT32 DropAtMs, BYTE Count, {float X,Z}[n]                          (7+8n)
 };
 
 // 고정 길이 페이로드 크기 (Type 포함). 수신 검증에 사용
@@ -73,6 +76,9 @@ const int MAX_DELETE_PER_PACKET = 127;  // 3 + 4*127 = 511
 const int MAX_WEAPON_DEFS_PER_PACKET = 14;   // 3 + 36*14 = 507 (v6 항목 36B)
 const int MAX_CONTAINER_CREATE_PER_PACKET = 39;  // 3 + 13*39 = 510
 const int MAX_CONTAINER_DELETE_PER_PACKET = 127;
+const int MAX_COVER_STATE_PER_PACKET = 56;          // 3 + 9*56 = 507
+const uint32_t HIT_TARGET_COVER = 0x80000000u;      // CS_HIT_REPORT TargetID 최상위 비트 = 파괴 가능 엄폐물
+const uint8_t CREATE_FLAG_SPAWN = 0x01;             // SC_CREATE_CHARACTERS Flags: 방금 스폰
 const int LEN_SC_ENTER_GAME = 65;      // v4 (MapHash, SprintMultiplier 포함)
 const int LEN_SC_PLAYER_COUNT = 6;
 

@@ -83,7 +83,7 @@ class Bot {
   }
   drop(type) { this.msgs = this.msgs.filter(m => m.type !== type); }
   async enter(name) {
-    this.send(new W(T.CS_ENTER_GAME).u32(6).name(name));
+    this.send(new W(T.CS_ENTER_GAME).u32(7).name(name));
     this.me = await this.wait(T.SC_ENTER_GAME);
     this.x = this.me.x; this.z = this.me.z; this.id = this.me.id;
     const sent = this.now(); this.send(new W(T.CS_PING).u32(sent));

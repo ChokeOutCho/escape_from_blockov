@@ -56,22 +56,3 @@ const WeaponDef* WeaponTable::Find(uint8_t id) const
 		if (d.id == id) return &d;
 	return nullptr;
 }
-
-bool SpawnTable::Load(const char* path)
-{
-	std::ifstream f(path);
-	if (!f) return false;
-	std::string line;
-	while (std::getline(f, line))
-	{
-		size_t hash = line.find('#');
-		if (hash != std::string::npos) line = line.substr(0, hash);
-		std::istringstream is(line);
-		int sx, sy;
-		if (!(is >> sx >> sy)) continue;
-		if (sx < 0 || sy < 0 || sx >= MapConst::SectorCount || sy >= MapConst::SectorCount) continue;
-		SpawnPoint p{ sx, sy, (sx + 0.5f) * MapConst::SectorSize, (sy + 0.5f) * MapConst::SectorSize };
-		m_spawns.push_back(p);
-	}
-	return !m_spawns.empty();
-}

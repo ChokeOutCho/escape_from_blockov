@@ -36,6 +36,15 @@ static void ConsoleHome()
 }
 
 #ifndef GAME_STUB_NETLIB
+// 크래시 직전 게임 로그에 한 줄 (game-spec 10.8). 덤프는 CrashDump가 dumps/에 쓴다
+static void OnCrash(unsigned long code, const char* reason, const char* dumpPath)
+{
+	char buf[256];
+	uint32_t t = GetServerTimeMs() / 1000;
+	snprintf(buf, sizeof(buf), "[%02u:%02u:%02u] [crash] %s exception 0x%08lX -> %s", t / 3600, (t / 60) % 60, t % 60, reason, code, dumpPath);
+	GameLogBuffer::Instance().PushNoWait(buf);
+}
+
 // 실행 파일을 x64\Release에서 직접 실행한 경우: 작업 폴더에 game_config.txt가 없으면 실행 파일 위쪽 폴더(server/GameServer)로 이동
 // (설정·무기표·스폰·엄폐물 맵 경로가 모두 server/GameServer 기준 상대 경로이기 때문)
 static void FixWorkingDirectory()
@@ -63,6 +72,7 @@ int main()
 {
 #ifndef GAME_STUB_NETLIB
 	FixWorkingDirectory();
+	CrashDump::SetOnCrash(OnCrash);
 #endif
 	GameConfig cfg;
 	if (!cfg.Load("game_config.txt"))
@@ -81,16 +91,13 @@ int main()
 		printf("default_weapon_id %d not in %s\n", cfg.defaultWeaponId, cfg.weaponsFile.c_str());
 		return -1;
 	}
-	SpawnTable spawns;
-	if (!spawns.Load(cfg.spawnsFile.c_str()))
-		printf("%s not found. spawning at map center\n", cfg.spawnsFile.c_str());
-
 	ObstacleMap obstacles;
 	{
 		std::string err;
 		if (obstacles.LoadBmp(cfg.obstacleMapFile.c_str(), err))
-			printf("obstacle map %s (%dx%d): wall %d, low %d cells, hash 0x%08X\n", cfg.obstacleMapFile.c_str(),
-			       obstacles.ImageWidth(), obstacles.ImageHeight(), obstacles.WallCells(), obstacles.LowCells(), obstacles.Hash());
+			printf("obstacle map %s (%dx%d): wall %d, low %d, destructible %d cells (%d covers), hash 0x%08X\n", cfg.obstacleMapFile.c_str(),
+			       obstacles.ImageWidth(), obstacles.ImageHeight(), obstacles.WallCells(), obstacles.LowCells(),
+			       obstacles.DestCells(), (int)obstacles.Covers().size(), obstacles.Hash());
 		else
 			printf("[warn] obstacle map %s not loaded: %s → 엄폐물 없이 실행\n", cfg.obstacleMapFile.c_str(), err.c_str());
 	}
@@ -100,10 +107,10 @@ int main()
 		       cfg.roomCount, cfg.workerThreads);
 
 	GetServerTimeMs();  // 서버 시각 기준점 고정
-	GameServer* server = new GameServer(cfg, weapons, spawns, obstacles);
+	GameServer* server = new GameServer(cfg, weapons, obstacles);
 	server->Start();
-	printf("GameServer start port %d, rooms %d x %d, weapons %d, spawns %d\n",
-	       cfg.port, cfg.roomCount, cfg.roomCapacity, (int)weapons.All().size(), (int)spawns.All().size());
+	printf("GameServer start port %d, rooms %d x %d, weapons %d\n",
+	       cfg.port, cfg.roomCount, cfg.roomCapacity, (int)weapons.All().size());
 	if (cfg.testMode)
 		printf("[TEST MODE] 모든 플레이어를 섹터 (%d, %d)에 스폰\n", cfg.testSpawnSectorX, cfg.testSpawnSectorY);
 
@@ -176,8 +183,8 @@ int main()
 		     sys.GetTotalSendKBps(), sys.GetTotalRecvKBps());
 #endif
 		Line("");
-		Line(" [Map]       %s: %s  wall %d  low %d  hash 0x%08X", cfg.obstacleMapFile.c_str(),
-		     obstacles.Loaded() ? "loaded" : "NOT LOADED", obstacles.WallCells(), obstacles.LowCells(), obstacles.Hash());
+		Line(" [Map]       %s: %s  wall %d  low %d  cover %d  hash 0x%08X", cfg.obstacleMapFile.c_str(),
+		     obstacles.Loaded() ? "loaded" : "NOT LOADED", obstacles.WallCells(), obstacles.LowCells(), (int)obstacles.Covers().size(), obstacles.Hash());
 		Line("------------------------------- log -----------------------------------");
 		{
 			auto logs = GameLogBuffer::Instance().Tail(10);

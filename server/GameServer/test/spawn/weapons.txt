@@ -1,0 +1,7 @@
+# 무기 테이블 (game-spec 5장, 19장). 서버가 SC_WEAPON_DEFS로 클라에 전송하는 단일 진실 원본.
+# id name damage range speed intervalMs radius magazine reloadMs spreadDeg pellets pierce jitterDeg durability slot
+#  - damage: 산탄 1발당 피해, spreadDeg: 산탄 전체 확산각(±spreadDeg/2), jitterDeg: 발사 방향 흔들림(±)
+#  - durability: 특수 무기 발사 횟수(0 = 무한), slot: 1 특수 무기 / 2 기본 무기
+1 Pistol  20 32 100 250  0.2 0 0 0  1 0 3 0  2
+2 Shotgun 20 25 130 1000 0.2 0 0 12 5 0 0 40 1
+3 Sniper  60 45 200 2000 0.2 0 0 0  1 0 0 30 1

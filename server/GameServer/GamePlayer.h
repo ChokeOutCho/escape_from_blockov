@@ -1,6 +1,6 @@
 #pragma once
 ////////////////////////////////////////////////////////////////////////
-// 플레이어 상태 + 위치 이력(game-spec 10.5) + 사격 기록(10.2)
+// 플레이어 상태 + 위치 이력(game-spec 10.5) + 사격 기록(11.2)
 // EntryContent에서 생성 → Move_Content의 completionKey로 BattleContent에 전달 → BattleContent가 소유/삭제
 ////////////////////////////////////////////////////////////////////////
 #include <cstdint>
@@ -85,6 +85,7 @@ struct ShotRecord
 	uint32_t recvTime;
 	uint8_t hitCount[MAX_PELLETS];
 	uint32_t hitTargets[MAX_PELLETS][MAX_TARGETS];
+	uint8_t coverHit[MAX_PELLETS];      // 산탄이 파괴 가능 엄폐물에 맞음 (탄은 거기서 멈춤)
 };
 
 // 기간 내 위반 횟수 카운터
@@ -169,22 +170,22 @@ public:
 	float fireTokens = 3;
 
 	// v6 인벤토리 (game-spec 6.1)
-	uint8_t equipped = SLOT_PISTOL;     // 1 특수 총, 2 권총
+	uint8_t equipped = SLOT_PISTOL;     // 1 특수 무기, 2 권총
 	uint8_t specialWeaponId = 0;        // 0 = 없음
 	uint16_t specialDurability = 0;
 	uint8_t bandages = 0;
 
-	// 구르기 (19.3)
+	// 구르기 (4.2)
 	uint32_t rollUntil = 0;             // 구르기 끝 시각 (이 전의 CS_MOVE 무시)
 	uint32_t rollReadyAt = 0;           // 다음 구르기 가능 시각
 	bool rolling = false;
 	bool rollCheckPending = false;      // 구르기 후 첫 CS_MOVE에서 도착점 차이 검사
 
-	// 붕대 (19.4)
+	// 붕대 (6.2)
 	uint32_t bandageUntil = 0;
 	bool usingBandage = false;
 
-	// 상호작용 (19.5)
+	// 상호작용 (6.3)
 	uint32_t lastMovedTime = 0;
 	uint32_t openContainerId = 0;
 

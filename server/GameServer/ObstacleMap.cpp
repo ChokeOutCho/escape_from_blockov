@@ -10,8 +10,14 @@ namespace
 	uint32_t RdU32(const std::vector<uint8_t>& b, size_t o) { return b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | ((uint32_t)b[o + 3] << 24); }
 	uint16_t RdU16(const std::vector<uint8_t>& b, size_t o) { return (uint16_t)(b[o] | (b[o + 1] << 8)); }
 
+	// 셀 값: EMPTY 0, LOW 1, WALL 2, DEST 3 + level*16 (level 1~10)
 	uint8_t Classify(uint8_t r, uint8_t g, uint8_t b)
 	{
+		if (r >= 150 && g <= 100 && b <= 100)
+		{
+			int level = 1 + (r - 150) * 9 / 105;
+			return (uint8_t)(ObstacleMap::DEST + level * 16);
+		}
 		int lum = (299 * r + 587 * g + 114 * b) / 1000;
 		if (lum < 64) return ObstacleMap::WALL;
 		if (lum < 224) return ObstacleMap::LOW;
@@ -60,7 +66,7 @@ bool ObstacleMap::LoadBmp(const char* path, std::string& err)
 
 	const int W = MapConst::WorldCells;
 	m_cells.assign((size_t)W * W, EMPTY);
-	m_wall = m_low = 0;
+	m_wall = m_low = m_dest = 0;
 	int useW = width < W ? width : W;
 	int useH = height < W ? height : W;
 	for (int row = 0; row < height; row++)
@@ -84,13 +90,84 @@ bool ObstacleMap::LoadBmp(const char* path, std::string& err)
 			m_cells[(size_t)z * W + x] = t;
 			if (t == WALL) m_wall++;
 			else if (t == LOW) m_low++;
+			else if ((t & 3) == DEST) m_dest++;
 		}
 	}
 	m_imgW = width;
 	m_imgH = height;
 	m_loaded = true;
 	ComputeHash();
+	BuildCovers();
+	if ((int)m_covers.size() > MAX_COVERS) { err = "too many destructible covers"; m_loaded = false; return false; }
 	return true;
+}
+
+// 파괴 가능 엄폐물 묶음 만들기: 같은 셀 값으로 상하좌우 이어진 칸 = 1개. z→x 순서로 처음 만나는 묶음부터 id 0,1,2...
+void ObstacleMap::BuildCovers()
+{
+	const int W = MapConst::WorldCells;
+	m_coverOf.assign((size_t)W * W, 0);
+	m_covers.clear();
+	m_coverCells.clear();
+	std::vector<uint32_t> stack;
+	for (int z = 0; z < W; z++)
+		for (int x = 0; x < W; x++)
+		{
+			size_t i = (size_t)z * W + x;
+			uint8_t v = m_cells[i];
+			if ((v & 3) != DEST || m_coverOf[i] != 0) continue;
+			if ((int)m_covers.size() >= MAX_COVERS) { m_covers.push_back(Cover{}); return; }
+			Cover c{};
+			c.id = (uint16_t)m_covers.size();
+			c.maxHp = (uint8_t)((v >> 4) * 10);
+			c.x0 = c.x1 = x; c.z0 = c.z1 = z;
+			c.cellStart = (uint32_t)m_coverCells.size();
+			uint16_t mark = (uint16_t)(c.id + 1);
+			m_coverOf[i] = mark;
+			stack.clear();
+			stack.push_back((uint32_t)i);
+			while (!stack.empty())
+			{
+				uint32_t cur = stack.back(); stack.pop_back();
+				m_coverCells.push_back(cur);
+				int cx = (int)(cur % W), cz = (int)(cur / W);
+				if (cx < c.x0) c.x0 = cx; if (cx > c.x1) c.x1 = cx;
+				if (cz < c.z0) c.z0 = cz; if (cz > c.z1) c.z1 = cz;
+				const int nx[4] = { cx + 1, cx - 1, cx, cx }, nz[4] = { cz, cz, cz + 1, cz - 1 };
+				for (int k = 0; k < 4; k++)
+				{
+					if (nx[k] < 0 || nz[k] < 0 || nx[k] >= W || nz[k] >= W) continue;
+					size_t j = (size_t)nz[k] * W + nx[k];
+					if (m_cells[j] != v || m_coverOf[j] != 0) continue;
+					m_coverOf[j] = mark;
+					stack.push_back((uint32_t)j);
+				}
+			}
+			c.cellCount = (uint32_t)m_coverCells.size() - c.cellStart;
+			c.cx = (c.x0 + c.x1 + 1) * 0.5f;
+			c.cz = (c.z0 + c.z1 + 1) * 0.5f;
+			c.sx = MapConst::ToSector(c.cx);
+			c.sy = MapConst::ToSector(c.cz);
+			m_covers.push_back(c);
+		}
+}
+
+float ObstacleMap::DistanceToCover(int coverId, float x, float z) const
+{
+	if (coverId < 0 || coverId >= (int)m_covers.size()) return 1e30f;
+	const Cover& c = m_covers[coverId];
+	const int W = MapConst::WorldCells;
+	float best = 1e30f;
+	for (uint32_t k = 0; k < c.cellCount; k++)
+	{
+		uint32_t cell = m_coverCells[c.cellStart + k];
+		float x0 = (float)(cell % W), z0 = (float)(cell / W);
+		float nx = x < x0 ? x0 : (x > x0 + 1 ? x0 + 1 : x);
+		float nz = z < z0 ? z0 : (z > z0 + 1 ? z0 + 1 : z);
+		float d = sqrtf((x - nx) * (x - nx) + (z - nz) * (z - nz));
+		if (d < best) best = d;
+	}
+	return best;
 }
 
 void ObstacleMap::ComputeHash()
@@ -122,7 +199,7 @@ bool ObstacleMap::CircleBlocked(float x, float z, float r) const
 	return false;
 }
 
-bool ObstacleMap::SegmentBlocked(float ax, float az, float bx, float bz, bool bullets) const
+bool ObstacleMap::SegmentBlocked(float ax, float az, float bx, float bz, bool bullets, const uint8_t* destroyed, int ignoreCover) const
 {
 	if (!m_loaded) return false;
 	int cx = (int)floorf(ax), cz = (int)floorf(az);
@@ -138,7 +215,19 @@ bool ObstacleMap::SegmentBlocked(float ax, float az, float bx, float bz, bool bu
 
 	for (int guard = 0; guard < 20000; guard++)
 	{
-		bool blocked = bullets ? BlocksBullet(cx, cz) : BlocksMove(cx, cz);
+		bool blocked;
+		if (!bullets) blocked = BlocksMove(cx, cz);
+		else
+		{
+			uint8_t t = At(cx, cz);
+			if (t == WALL) blocked = true;
+			else if (t == DEST)
+			{
+				int id = CoverAt(cx, cz);
+				blocked = id != ignoreCover && !(destroyed && id >= 0 && destroyed[id]);
+			}
+			else blocked = false;
+		}
 		if (blocked) return true;
 		if (cx == ex && cz == ez) return false;
 		if (tMaxX < tMaxZ) { if (tMaxX > 1.0f) return false; cx += stepX; tMaxX += tDeltaX; }

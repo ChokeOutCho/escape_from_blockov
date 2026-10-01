@@ -90,6 +90,23 @@ struct GameLogBuffer
 			fflush(file);
 		}
 	}
+	// 크래시 처리기용: 잠금을 기다리지 않는다 (죽은 스레드가 잠금을 쥐고 있을 수 있음)
+	void PushNoWait(const char* msg)
+	{
+		if (lock.try_lock())
+		{
+			lines.emplace_back(msg);
+			total++;
+			WriteFile(msg);
+			lock.unlock();
+		}
+		else if (file)
+		{
+			fputs(msg, file);
+			fputc('\n', file);
+			fflush(file);
+		}
+	}
 	// 최근 n줄 복사
 	std::vector<std::string> Tail(size_t n)
 	{

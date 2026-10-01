@@ -1,6 +1,6 @@
 // [테스트 전용] 엄폐물(BMP) 서버 처리 테스트
 //  1) node obstacle_test.js make <out.bmp>          : 테스트 맵 생성 (1024x1024, 24bit)
-//  2) 서버 설정: obstacle_map=<out.bmp>, spawns "10 10"(섹터 50m → 중심 525,525), spawn_offset_radius 0, move_speed 200
+//  2) 서버 설정: obstacle_map=<out.bmp>, test_mode + test_spawn_sector 10,10 + test_spawn_radius 0 (중심 525,525), move_speed 200 (test/obs)
 //  3) node obstacle_test.js run <host> <port> <out.bmp>
 // 맵: WALL x[537,539) z[513,543)  /  LOW x[511,513) z[513,543)   스폰 (525,525)
 'use strict';
@@ -57,7 +57,7 @@ class Bot {
   connect() { return new Promise(r => { this.s = net.connect(this.port, this.host, r); this.s.on('data', d => { this.buf = Buffer.concat([this.buf, d]); while (this.buf.length >= 5) { const l = this.buf.readUInt16LE(1); if (this.buf.length < 5 + l) break; this.msgs.push(Buffer.from(this.buf.subarray(5, 5 + l))); this.buf = this.buf.subarray(5 + l); } }); }); }
   async wait(type, pred = () => true, ms = 1500) { const end = Date.now() + ms; while (Date.now() < end) { const i = this.msgs.findIndex(p => p.readUInt16LE(0) === type && pred(p)); if (i >= 0) return this.msgs.splice(i, 1)[0]; await sleep(10); } return null; }
   async enter() {
-    this.s.write(pk(3000, (b, o) => { b.writeUInt32LE(6, o); o += 4; for (let i = 0; i < 12; i++) { b.writeUInt16LE(i < this.name.length ? this.name.charCodeAt(i) : 0, o); o += 2; } return o; }));
+    this.s.write(pk(3000, (b, o) => { b.writeUInt32LE(7, o); o += 4; for (let i = 0; i < 12; i++) { b.writeUInt16LE(i < this.name.length ? this.name.charCodeAt(i) : 0, o); o += 2; } return o; }));
     const e = await this.wait(3100);
     this.id = e.readUInt32LE(3); this.x = e.readFloatLE(8); this.z = e.readFloatLE(12); this.offset = e.readUInt32LE(29) - this.now(); this.mapHash = e.readUInt32LE(57);
     return e;

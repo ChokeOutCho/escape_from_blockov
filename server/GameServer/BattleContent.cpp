@@ -27,11 +27,16 @@ namespace
 
 std::atomic<int> BattleContent::s_online{ 0 };
 
-BattleContent::BattleContent(int roomNo, const GameConfig& cfg, const WeaponTable& weapons, const SpawnTable& spawns, const ObstacleMap& obstacles)
-	: NetLib_Content(cfg.battleTickMs), m_roomNo(roomNo), m_cfg(cfg), m_weapons(weapons), m_spawns(spawns), m_obstacles(obstacles),
+BattleContent::BattleContent(int roomNo, const GameConfig& cfg, const WeaponTable& weapons, const ObstacleMap& obstacles)
+	: NetLib_Content(cfg.battleTickMs), m_roomNo(roomNo), m_cfg(cfg), m_weapons(weapons), m_obstacles(obstacles),
 	  m_rng((unsigned)(roomNo * 7919 + timeGetTime())),
 	  m_bagCells(MapConst::SectorCount * MapConst::SectorCount)
 {
+	const auto& covers = m_obstacles.Covers();
+	m_coverHp.resize(covers.size());
+	m_coverDestroyed.assign(covers.size(), 0);
+	m_coverDestroyedAt.assign(covers.size(), 0);
+	for (size_t i = 0; i < covers.size(); i++) m_coverHp[i] = covers[i].maxHp;
 }
 
 BattleContent::~BattleContent()
@@ -55,8 +60,9 @@ void BattleContent::OnBegin()
 	m_lastUpdateTime = GetServerTimeMs();
 	m_lastSecondTick = m_lastUpdateTime;
 	m_lastContainerCheck = m_lastUpdateTime;
-	// 에어드랍: 서버 업타임이 airdrop_interval_ms의 배수가 될 때마다 (19.6)
-	m_airdropActive = false;    // 빈 방에 첫 플레이어가 들어오면 시작 (22.4)
+	m_lastCoverCheck = m_lastUpdateTime;
+	m_airdropActive = false;    // 빈 방에 첫 플레이어가 들어오면 시작 (6.4)
+	m_forecastActive = false;
 	GameLog("[room %d] begin (tick %dms, capacity %d)", m_roomNo, m_cfg.battleTickMs, m_cfg.roomCapacity);
 }
 
@@ -108,22 +114,23 @@ void BattleContent::OnEnter(unsigned long long sessionHandle, void* completionKe
 
 	SendEnterSequence(p);
 
-	// 빈 방에 첫 플레이어 → 에어드랍 즉시 1회차 + 주기 타이머 시작 (22.4)
+	// 빈 방에 첫 플레이어 → 에어드랍 즉시 1회차(예고 없음) + 주기 타이머 시작 (6.4)
 	if (m_players.size() == 1 && m_cfg.airdropIntervalMs > 0)
 	{
 		m_airdropActive = true;
+		m_forecastActive = false;
 		m_nextAirdropAt = now + (uint32_t)m_cfg.airdropIntervalMs;
 		AirdropRound(now);
 	}
 
-	// 주변에 신규 1명 알림
+	// 주변에 신규 1명 알림 (스폰 플래그 → 스폰 이펙트)
 	std::vector<GamePlayer*> view;
 	CollectView(p, p, view);
 	if (!view.empty())
 	{
 		std::vector<unsigned long long> hs;
 		Handles(view, hs);
-		Packet* pkt = BuildCreateOne(p);
+		Packet* pkt = BuildCreateOne(p, CREATE_FLAG_SPAWN);
 		Multicast(hs, pkt);
 	}
 }
@@ -187,6 +194,9 @@ void BattleContent::SendEnterSequence(GamePlayer* p)
 	std::vector<unsigned long long> self{ p->sessionHandle };
 	for (auto& kv : m_containers)
 		if (kv.second.type == CONTAINER_AIRDROP) SendAirdrop(self, kv.second, false);
+	// 3-2) PT_SC_AIRDROP_FORECAST (예고 중이면), PT_SC_COVER_STATE (파괴된 엄폐물 전부)
+	if (m_forecastActive) SendForecast(self);
+	SendCoverStates(self, m_destroyedCovers);
 
 	// 4) PT_SC_RANKING_TOP3 (현재 상태)
 	std::vector<RankEntry> top;
@@ -205,43 +215,55 @@ void BattleContent::ChooseSpawn(float& outX, float& outZ)
 		int sx = std::clamp(m_cfg.testSpawnSectorX, 0, MapConst::SectorCount - 1);
 		int sy = std::clamp(m_cfg.testSpawnSectorY, 0, MapConst::SectorCount - 1);
 		const float margin = m_cfg.characterRadius + 4.0f;
-		std::uniform_real_distribution<float> ux(sx * S + margin, (sx + 1) * S - margin), uz(sy * S + margin, (sy + 1) * S - margin);
-		outX = Clampf(ux(m_rng), MapConst::MinPos, MapConst::MaxPos);
-		outZ = Clampf(uz(m_rng), MapConst::MinPos, MapConst::MaxPos);
+		if (m_cfg.testSpawnRadius >= 0)
+		{
+			// 섹터 중심에서 반경 test_spawn_radius 안 (0 = 정확히 중심)
+			std::uniform_real_distribution<float> ang(0, 2 * PI), rad(0.0f, (float)m_cfg.testSpawnRadius);
+			float a = ang(m_rng), d = m_cfg.testSpawnRadius > 0 ? sqrtf(rad(m_rng) / m_cfg.testSpawnRadius) * m_cfg.testSpawnRadius : 0.0f;
+			outX = Clampf((sx + 0.5f) * S + cosf(a) * d, MapConst::MinPos, MapConst::MaxPos);
+			outZ = Clampf((sy + 0.5f) * S + sinf(a) * d, MapConst::MinPos, MapConst::MaxPos);
+		}
+		else
+		{
+			std::uniform_real_distribution<float> ux(sx * S + margin, (sx + 1) * S - margin), uz(sy * S + margin, (sy + 1) * S - margin);
+			outX = Clampf(ux(m_rng), MapConst::MinPos, MapConst::MaxPos);
+			outZ = Clampf(uz(m_rng), MapConst::MinPos, MapConst::MaxPos);
+		}
 		if (!m_obstacles.FindFree(outX, outZ, m_cfg.characterRadius + 0.5f, 48.0f))
 			GameLog("[room %d] no free test spawn position near (%.1f, %.1f)", m_roomNo, outX, outZ);
 		return;
 	}
 
-	const auto& sp = m_spawns.All();
-	if (sp.empty())
-	{
-		outX = outZ = MapConst::WorldSize * 0.5f;
-		return;
-	}
+	// 900개 섹터마다 주변 3x3의 살아있는 인원 → 가장 적은 섹터들 중 무작위 → 그 섹터 안 무작위 위치 (game-spec 3장)
+	const int N = MapConst::SectorCount;
 	const int r = m_cfg.viewSectorRadius;
-	std::vector<int> empty;
-	int best = -1, bestCount = 1 << 30;
-	for (int i = 0; i < (int)sp.size(); i++)
-	{
-		int c = m_sectors.CountInView(sp[i].sx, sp[i].sy, r);
-		if (c == 0) empty.push_back(i);
-		if (c < bestCount) { bestCount = c; best = i; }
-	}
-	int idx = empty.empty() ? best : empty[std::uniform_int_distribution<int>(0, (int)empty.size() - 1)(m_rng)];
-	outX = sp[idx].x;
-	outZ = sp[idx].z;
-
-	// 같은 섹터에 이미 사람이 있으면 반경 32 내 무작위 오프셋
-	if (!m_sectors.Cell(sp[idx].sx, sp[idx].sy).empty() && m_cfg.spawnOffsetRadius > 4)
-	{
-		std::uniform_real_distribution<float> ang(0, 2 * PI), rad(4.0f, (float)m_cfg.spawnOffsetRadius);
-		float a = ang(m_rng), d = rad(m_rng);
-		outX += cosf(a) * d;
-		outZ += sinf(a) * d;
-	}
-	outX = Clampf(outX, MapConst::MinPos, MapConst::MaxPos);
-	outZ = Clampf(outZ, MapConst::MinPos, MapConst::MaxPos);
+	std::vector<int> alive(N * N, 0);
+	for (int y = 0; y < N; y++)
+		for (int x = 0; x < N; x++)
+		{
+			int n = 0;
+			for (GamePlayer* q : m_sectors.Cell(x, y)) if (q->IsAlive() && !q->disconnecting) n++;
+			alive[y * N + x] = n;
+		}
+	int best = 1 << 30;
+	std::vector<int> cands;
+	for (int cy = 0; cy < N; cy++)
+		for (int cx = 0; cx < N; cx++)
+		{
+			int sum = 0;
+			for (int y = cy - r; y <= cy + r; y++)
+				for (int x = cx - r; x <= cx + r; x++)
+					if (SectorMap::InRange(x, y)) sum += alive[y * N + x];
+			if (sum < best) { best = sum; cands.clear(); }
+			if (sum == best) cands.push_back(cy * N + cx);
+		}
+	int pick = cands[std::uniform_int_distribution<int>(0, (int)cands.size() - 1)(m_rng)];
+	int sx = pick % N, sy = pick / N;
+	const float S = (float)MapConst::SectorSize;
+	const float margin = 4.0f;
+	std::uniform_real_distribution<float> ux(sx * S + margin, (sx + 1) * S - margin), uz(sy * S + margin, (sy + 1) * S - margin);
+	outX = Clampf(ux(m_rng), MapConst::MinPos, MapConst::MaxPos);
+	outZ = Clampf(uz(m_rng), MapConst::MinPos, MapConst::MaxPos);
 	// 엄폐물 위라면 가까운 빈 곳으로
 	if (!m_obstacles.FindFree(outX, outZ, m_cfg.characterRadius + 0.5f, 48.0f))
 		GameLog("[room %d] no free spawn position near (%.1f, %.1f)", m_roomNo, outX, outZ);
@@ -341,7 +363,7 @@ void BattleContent::HandleMove(GamePlayer* p, PayloadReader& r, uint32_t now)
 	float px = r.F(), pz = r.F(), vx = r.F(), vz = r.F(), aim = r.F();
 	uint16_t seq = r.U16();
 
-	// 구르는 동안의 이동은 무시 (19.3). 구르기 끝 무렵(100ms 이내)에 도착한 이동은 도착 편차로 보고 받는다
+	// 구르는 동안의 이동은 무시 (4.2). 구르기 끝 무렵(100ms 이내)에 도착한 이동은 도착 편차로 보고 받는다
 	if (p->rolling)
 	{
 		if (TimeDiff(now, p->rollUntil) < -100) return;
@@ -448,14 +470,14 @@ void BattleContent::HandleFire(GamePlayer* p, PayloadReader& r, uint32_t now)
 	uint8_t spreadSeed = r.U8();
 	r.U8();     // reserved
 
-	// 구르는 중 사격은 클라가 막는다. 패킷 뭉침을 감안해 명백히 이른 것만 조용히 버린다 (19.3)
+	// 구르는 중 사격은 클라가 막는다. 패킷 뭉침을 감안해 명백히 이른 것만 조용히 버린다 (4.2)
 	if (p->rolling && TimeDiff(p->rollUntil, now) > 150) return;
 
 	const WeaponDef* w = m_weapons.Find(weaponId);
 	uint8_t viol = VIOL_NONE;
 	float len = 0;
 	int32_t rewind = TimeDiff(now, viewTime);
-	if (w == nullptr || weaponId != p->weaponId) viol = VIOL_FIRE_WEAPON;       // 장착 무기만 (19.1)
+	if (w == nullptr || weaponId != p->weaponId) viol = VIOL_FIRE_WEAPON;       // 장착 무기만 (5.4)
 	else if (shotSeq <= p->lastShotSeq) viol = VIOL_FIRE_SEQ;
 	else if (!(Finite(ox) && Finite(oz) && Finite(dx) && Finite(dz))) viol = VIOL_FIRE_VALUE;
 	else
@@ -480,7 +502,7 @@ void BattleContent::HandleFire(GamePlayer* p, PayloadReader& r, uint32_t now)
 	dx /= len; dz /= len;
 	CancelBandage(p);
 
-	// 특수 총 내구도 (19.1): 0이 되면 사라지고 권총으로 전환
+	// 특수 무기 내구도 (5.4): 0이 되면 사라지고 권총으로 전환
 	if (p->equipped == SLOT_SPECIAL && w->durability > 0)
 	{
 		if (p->specialDurability > 0) p->specialDurability--;
@@ -516,7 +538,7 @@ void BattleContent::HandleFire(GamePlayer* p, PayloadReader& r, uint32_t now)
 		W32(pkt, shotSeq);
 		W8(pkt, weaponId);
 		WF(pkt, ox); WF(pkt, oz); WF(pkt, dx); WF(pkt, dz);
-		W8(pkt, spreadSeed);    // 사수 클라와 같은 산탄 각도 (19.2)
+		W8(pkt, spreadSeed);    // 사수 클라와 같은 산탄 각도 (5.3)
 		Multicast(hs, pkt);
 	}
 }
@@ -532,12 +554,30 @@ void BattleContent::HandleHitReport(GamePlayer* p, PayloadReader& r, int count, 
 
 		if (!p->IsAlive() || p->disconnecting) return;
 
-		GamePlayer* target = nullptr;
 		const WeaponDef* w = nullptr;
+		// 파괴 가능 엄폐물 피격 (game-spec 11.3)
+		if (targetId & HIT_TARGET_COVER)
+		{
+			int coverId = (int)(targetId & 0xFFFF);
+			if ((targetId & 0x7FFF0000u) != 0) coverId = -1;
+			int cres = ValidateCoverHit(p, shotSeq, pellet, coverId, hx, hz, now, &w);
+			if (cres != 0)
+			{
+				if (cres < 0) { p->ignoredHits++; continue; }
+				CountCheat(p, now, (uint8_t)cres);
+				if (p->disconnecting) return;
+				continue;
+			}
+			p->FindShot(shotSeq)->coverHit[pellet] = 1;
+			DamageCover(coverId, w->damage, now);
+			continue;
+		}
+
+		GamePlayer* target = nullptr;
 		int res = ValidateHit(p, shotSeq, pellet, targetId, hx, hz, now, &target, &w);
 		if (res != 0)
 		{
-			// 대상 사망·시야 이탈·보고 시한 초과 등 정상 플레이에서도 생기는 거부는 세지 않는다 (10.3)
+			// 대상 사망·시야 이탈·보고 시한 초과 등 정상 플레이에서도 생기는 거부는 세지 않는다 (11.3)
 			if (res < 0) { p->ignoredHits++; continue; }
 			CountCheat(p, now, (uint8_t)res);
 			if (p->disconnecting) return;
@@ -601,12 +641,138 @@ int BattleContent::ValidateHit(GamePlayer* shooter, uint32_t shotSeq, uint8_t pe
 	float ex = hx - px, ez = hz - pz;
 	if (sqrtf(ex * ex + ez * ez) > m_cfg.characterRadius + w->projectileRadius + m_cfg.hitTolerance) return VIOL_HIT_POSITION;
 
-	// 9. 사선: 발사 위치 → 충돌 지점 사이에 벽(WALL)이 없어야 한다 (낮은 엄폐물은 통과)
-	if (m_obstacles.SegmentBlocked(s->ox, s->oz, hx, hz, true)) return VIOL_HIT_WALL;
+	// 9. 사선: 발사 위치 → 충돌 지점 사이에 벽·멀쩡한 파괴 가능 엄폐물이 없어야 한다 (낮은 엄폐물·반 블럭은 통과)
+	if (m_obstacles.SegmentBlocked(s->ox, s->oz, hx, hz, true, m_coverDestroyed.data())) return VIOL_HIT_WALL;
 
 	*outTarget = t;
 	*outWeapon = w;
 	return 0;
+}
+
+int BattleContent::ValidateCoverHit(GamePlayer* shooter, uint32_t shotSeq, uint8_t pellet, int coverId,
+                                    float hx, float hz, uint32_t now, const WeaponDef** outWeapon)
+{
+	const int HIT_IGNORE = -1;
+
+	ShotRecord* s = shooter->FindShot(shotSeq);
+	if (s == nullptr) return shotSeq > shooter->lastShotSeq ? VIOL_HIT_FAKE_SHOT : HIT_IGNORE;
+	const WeaponDef* w = m_weapons.Find(s->weaponId);
+	if (w == nullptr) return VIOL_HIT_WEAPON;
+	if (pellet >= w->pellets || pellet >= ShotRecord::MAX_PELLETS) return VIOL_HIT_PELLET;
+	if (s->coverHit[pellet]) return VIOL_HIT_DUP;             // 탄은 엄폐물에서 멈춘다
+
+	const auto& covers = m_obstacles.Covers();
+	if (coverId < 0 || coverId >= (int)covers.size()) return VIOL_HIT_VALUE;
+	if (m_coverDestroyed[coverId]) return HIT_IGNORE;          // 그 사이 파괴됨
+	const ObstacleMap::Cover& c = covers[coverId];
+	if (!SectorMap::IsNear(shooter->sectorX, shooter->sectorY, c.sx, c.sy, m_cfg.viewSectorRadius)) return HIT_IGNORE;
+
+	float flightMs = w->range / w->projectileSpeed * 1000.0f;
+	if ((float)TimeDiff(now, s->recvTime) > flightMs + m_cfg.maxRewindMs + 200.0f) return HIT_IGNORE;
+
+	if (!Finite(hx) || !Finite(hz)) return VIOL_HIT_VALUE;
+	float rx = hx - s->ox, rz = hz - s->oz;
+	float dist = sqrtf(rx * rx + rz * rz);
+	if (dist > w->range + w->projectileRadius) return VIOL_HIT_RANGE;
+	if (dist >= 2.0f)
+	{
+		float cosA = Clampf((rx * s->dx + rz * s->dz) / dist, -1.0f, 1.0f);
+		float angleDeg = acosf(cosA) * 180.0f / PI;
+		if (angleDeg > w->spreadDeg * 0.5f + 3.0f) return VIOL_HIT_ANGLE;
+	}
+	if (m_obstacles.DistanceToCover(coverId, hx, hz) > w->projectileRadius + 0.75f) return VIOL_HIT_POSITION;
+	if (m_obstacles.SegmentBlocked(s->ox, s->oz, hx, hz, true, m_coverDestroyed.data(), coverId)) return VIOL_HIT_WALL;
+
+	*outWeapon = w;
+	return 0;
+}
+
+////////////////////////////////////////////////////////////////////////
+// 파괴 가능 엄폐물 (game-spec 3.6)
+////////////////////////////////////////////////////////////////////////
+void BattleContent::DamageCover(int coverId, uint16_t damage, uint32_t now)
+{
+	const ObstacleMap::Cover& c = m_obstacles.Covers()[coverId];
+	uint8_t hp = m_coverHp[coverId];
+	hp = (hp > damage) ? (uint8_t)(hp - damage) : 0;
+	m_coverHp[coverId] = hp;
+
+	std::vector<unsigned long long> hs;
+	CollectViewOfSector(c.sx, c.sy, hs);
+	if (!hs.empty())
+	{
+		Packet* pkt = Packet::Alloc();
+		W16(pkt, PT_SC_COVER_HP);
+		W16(pkt, (uint16_t)coverId);
+		W8(pkt, hp);
+		Multicast(hs, pkt);
+	}
+	if (hp > 0) return;
+
+	// 파괴 → 반 블럭 (방 전체)
+	m_coverDestroyed[coverId] = 1;
+	m_coverDestroyedAt[coverId] = now;
+	m_destroyedCovers.push_back((uint16_t)coverId);
+	AllHandles(hs);
+	std::vector<uint16_t> ids{ (uint16_t)coverId };
+	SendCoverStates(hs, ids);
+}
+
+bool BattleContent::CoverOccupied(int coverId) const
+{
+	const ObstacleMap::Cover& c = m_obstacles.Covers()[coverId];
+	bool occupied = false;
+	m_sectors.ForEachInView(c.sx, c.sy, 1, [&](GamePlayer* q) {
+		if (!occupied && q->IsAlive() && m_obstacles.DistanceToCover(coverId, q->x, q->z) < m_cfg.characterRadius)
+			occupied = true;
+	});
+	return occupied;
+}
+
+// 재생: 파괴 시각 + cover_regen_ms가 지났고 겹친 플레이어가 없으면 복구 (0.5초마다)
+void BattleContent::UpdateCovers(uint32_t now)
+{
+	if (TimeDiff(now, m_lastCoverCheck) < 500 || m_destroyedCovers.empty()) return;
+	m_lastCoverCheck = now;
+	std::vector<uint16_t> restored;
+	for (size_t i = 0; i < m_destroyedCovers.size();)
+	{
+		uint16_t id = m_destroyedCovers[i];
+		if (TimeDiff(now, m_coverDestroyedAt[id] + (uint32_t)m_cfg.coverRegenMs) >= 0 && !CoverOccupied(id))
+		{
+			m_coverDestroyed[id] = 0;
+			m_coverHp[id] = m_obstacles.Covers()[id].maxHp;
+			restored.push_back(id);
+			m_destroyedCovers[i] = m_destroyedCovers.back();
+			m_destroyedCovers.pop_back();
+		}
+		else i++;
+	}
+	if (restored.empty()) return;
+	std::vector<unsigned long long> hs;
+	AllHandles(hs);
+	SendCoverStates(hs, restored);
+}
+
+void BattleContent::SendCoverStates(const std::vector<unsigned long long>& hs, const std::vector<uint16_t>& ids)
+{
+	if (hs.empty()) return;
+	for (size_t start = 0; start < ids.size(); start += MAX_COVER_STATE_PER_PACKET)
+	{
+		size_t n = std::min(ids.size() - start, (size_t)MAX_COVER_STATE_PER_PACKET);
+		Packet* pkt = Packet::Alloc();
+		W16(pkt, PT_SC_COVER_STATE);
+		W8(pkt, (uint8_t)n);
+		for (size_t i = start; i < start + n; i++)
+		{
+			uint16_t id = ids[i];
+			W16(pkt, id);
+			W8(pkt, m_coverDestroyed[id]);
+			W32(pkt, m_coverDestroyedAt[id]);
+			W16(pkt, (uint16_t)std::clamp(m_cfg.coverRegenMs / 1000, 0, 65535));
+		}
+		Multicast(hs, pkt);
+	}
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -649,7 +815,7 @@ void BattleContent::Kill(GamePlayer* victim, GamePlayer* killer, uint32_t now)
 	m_sectors.Remove(victim);
 	CancelBandage(victim);
 	victim->openContainerId = 0;
-	CreateBag(victim, now);     // 사망 위치에 가방 (19.7)
+	CreateBag(victim, now);     // 사망 위치에 가방 (6.5)
 	victim->state = PlayerState::Dead;
 	victim->deadTime = now;
 	victim->vx = victim->vz = 0;
@@ -714,7 +880,7 @@ void BattleContent::CountMoveViolation(GamePlayer* p, uint32_t now, uint8_t kind
 		Kick(p, KICK_CHEAT_SUSPECT, now);
 }
 
-// 킥 로그 (10.4): 사유, 이동/부정 카운터(기간 내 횟수·마지막 종류), 입장 후 종류별 누적, 세지 않은 명중 거부 수
+// 킥 로그 (11.4): 사유, 이동/부정 카운터(기간 내 횟수·마지막 종류), 입장 후 종류별 누적, 세지 않은 명중 거부 수
 void BattleContent::LogKickDetail(GamePlayer* p, uint8_t reason)
 {
 	static const char* kickNames[] = { "-", "TIMEOUT", "INVALID_PACKET", "CHEAT_SUSPECT", "SERVER_SHUTDOWN" };
@@ -747,7 +913,7 @@ void BattleContent::ChangeSector(GamePlayer* p, int nsx, int nsy)
 	m_sectors.Remove(p);
 	m_sectors.Add(p, nsx, nsy);
 
-	// 가방 시야 diff (19.7)
+	// 가방 시야 diff (6.5)
 	{
 		std::vector<uint32_t> oldBags, newBags, bagRemoved, bagAdded;
 		CollectBagsInView(osx, osy, oldBags);
@@ -805,11 +971,11 @@ void BattleContent::OnUpdate(float deltaTime)
 		GamePlayer* p = kv.second;
 		if (!p->IsAlive()) continue;
 
-		// 이동 예산 (10.1)
+		// 이동 예산 (11.1)
 		const float maxSpeed = m_cfg.moveSpeed * m_cfg.sprintMultiplier;   // 달리기 최고 속도 기준
 		p->moveBudget = std::min(p->moveBudget + maxSpeed * dt * 1.2f, maxSpeed * 1.0f);
 
-		// 사격 토큰 (10.2)
+		// 사격 토큰 (11.2)
 		const WeaponDef* w = m_weapons.Find(p->weaponId);
 		if (w)
 			p->fireTokens = std::min(FireTokenCap(w), p->fireTokens + dt * (1000.0f / w->fireIntervalMs) * 1.1f);
@@ -817,7 +983,7 @@ void BattleContent::OnUpdate(float deltaTime)
 		// 구르기 종료
 		if (p->rolling && TimeDiff(now, p->rollUntil) >= 0) p->rolling = false;
 
-		// 붕대 완료 (19.4)
+		// 붕대 완료 (6.2)
 		if (p->usingBandage && TimeDiff(now, p->bandageUntil) >= 0)
 		{
 			CancelBandage(p);
@@ -830,7 +996,7 @@ void BattleContent::OnUpdate(float deltaTime)
 			}
 		}
 
-		// 정지 중 이력 보충 (9.5)
+		// 정지 중 이력 보충 (10.5)
 		if (TimeDiff(now, p->history.LastTime()) > HISTORY_REFILL_MS)
 			p->RecordHistory(now);
 	}
@@ -860,6 +1026,7 @@ void BattleContent::OnUpdate(float deltaTime)
 	}
 
 	UpdateContainers(now);
+	UpdateCovers(now);
 	UpdateRanking(false);
 	UpdateOnlineCount(now);
 }
@@ -940,7 +1107,7 @@ void BattleContent::OnRelease(unsigned long long sessionHandle, SESSION_LEAVE_CO
 	s_online.fetch_sub(1);
 	m_reserved.fetch_sub(1);
 	delete p;
-	if (m_players.empty()) m_airdropActive = false;    // 방이 비면 타이머 정지 (남은 에어드랍은 유지)
+	if (m_players.empty()) { m_airdropActive = false; m_forecastActive = false; }    // 방이 비면 타이머·예고 정지 (남은 에어드랍은 유지)
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -1098,7 +1265,7 @@ void BattleContent::HandleTake(GamePlayer* p, uint32_t id, uint8_t item, uint32_
 	{
 		if (c.specialId != 0)
 		{
-			// 기존 특수 총은 덮어쓴다(버려짐). 장착 상태는 유지
+			// 기존 특수 무기는 덮어쓴다(버려짐). 장착 상태는 유지
 			p->specialWeaponId = c.specialId;
 			p->specialDurability = c.durability;
 			c.specialId = 0;
@@ -1135,7 +1302,7 @@ void BattleContent::HandleTake(GamePlayer* p, uint32_t id, uint8_t item, uint32_
 	}
 	SendInventory(p);
 	BroadcastContents(c);
-	// 에어드랍: 누군가 특수 총을 가져가면 즉시 제거(남은 붕대도 사라짐), 붕대만 가져가 비어도 제거 (22.4)
+	// 에어드랍: 누군가 특수 무기를 가져가면 즉시 제거(남은 붕대도 사라짐), 붕대만 가져가 비어도 제거 (6.4)
 	if (c.type == CONTAINER_AIRDROP && (item == ITEM_SPECIAL_WEAPON || (c.specialId == 0 && c.bandages == 0)))
 		RemoveContainer(id);
 }
@@ -1206,11 +1373,22 @@ void BattleContent::UpdateContainers(uint32_t now)
 		for (uint32_t id : expired) RemoveContainer(id);
 	}
 
-	// 에어드랍 회차 (22.4)
-	if (m_airdropActive && m_cfg.airdropIntervalMs > 0 && TimeDiff(now, m_nextAirdropAt) >= 0)
+	// 에어드랍 (6.4): 투하 notice 전에 위치를 정해 예고 → 투하 시각에 그 위치에 생성
+	if (!m_airdropActive || m_cfg.airdropIntervalMs <= 0) return;
+	int notice = std::clamp(m_cfg.airdropNoticeMs, 0, m_cfg.airdropIntervalMs);
+	if (!m_forecastActive && TimeDiff(now, m_nextAirdropAt - (uint32_t)notice) >= 0)
+		ForecastAirdrops(now);
+	if (TimeDiff(now, m_nextAirdropAt) >= 0)
 	{
+		if (m_forecastActive)
+		{
+			for (size_t i = 0; i < m_forecastPos.size(); i++)
+				CreateAirdrop(m_forecastPos[i].first, m_forecastPos[i].second, m_forecastAlive[i]);
+		}
+		m_forecastActive = false;
+		m_forecastPos.clear();
+		m_forecastAlive.clear();
 		while (TimeDiff(now, m_nextAirdropAt) >= 0) m_nextAirdropAt += (uint32_t)m_cfg.airdropIntervalMs;
-		AirdropRound(now);
 	}
 }
 
@@ -1223,30 +1401,67 @@ int BattleContent::AirdropCap() const
 	return std::min(cap, m_cfg.airdropMax);
 }
 
-// 한 회차: 남은 자리(최대 - 현재) 중 1~남은 자리 무작위 개수 생성, 남은 자리가 없으면 건너뜀
-void BattleContent::AirdropRound(uint32_t now)
+// 한 회차의 개수·위치: 남은 자리(최대 - 현재) 중 1~남은 자리 무작위 개수, 남은 자리가 없으면 0개
+void BattleContent::PlanAirdrops(std::vector<std::pair<float, float>>& out, std::vector<int>& groupAlive)
 {
-	int existing = 0;
+	out.clear();
+	groupAlive.clear();
+	std::vector<std::pair<int, int>> taken;
 	for (auto& kv : m_containers)
-		if (kv.second.type == CONTAINER_AIRDROP) existing++;
+		if (kv.second.type == CONTAINER_AIRDROP) taken.push_back({ kv.second.sx, kv.second.sy });
 	int cap = AirdropCap();
-	int remain = cap - existing;
+	int remain = cap - (int)taken.size();
 	if (remain <= 0)
 	{
-		GameLog("[room %d] airdrop round skipped (%d / cap %d)", m_roomNo, existing, cap);
+		GameLog("[room %d] airdrop round skipped (%d / cap %d)", m_roomNo, (int)taken.size(), cap);
 		return;
 	}
 	int count = std::uniform_int_distribution<int>(1, remain)(m_rng);
 	for (int i = 0; i < count; i++)
-		if (!TryAirdrop(now)) break;
+	{
+		float x, z;
+		int alive;
+		if (!PickAirdropPos(taken, x, z, alive)) break;
+		out.push_back({ x, z });
+		groupAlive.push_back(alive);
+		taken.push_back({ MapConst::ToSector(x), MapConst::ToSector(z) });
+	}
 }
 
-bool BattleContent::TryAirdrop(uint32_t now)
+void BattleContent::AirdropRound(uint32_t now)
 {
-	std::vector<std::pair<int, int>> existing;
-	for (auto& kv : m_containers)
-		if (kv.second.type == CONTAINER_AIRDROP) existing.push_back({ kv.second.sx, kv.second.sy });
+	std::vector<std::pair<float, float>> pos;
+	std::vector<int> alive;
+	PlanAirdrops(pos, alive);
+	for (size_t i = 0; i < pos.size(); i++) CreateAirdrop(pos[i].first, pos[i].second, alive[i]);
+}
 
+void BattleContent::ForecastAirdrops(uint32_t now)
+{
+	PlanAirdrops(m_forecastPos, m_forecastAlive);
+	m_forecastActive = true;
+	std::vector<unsigned long long> hs;
+	AllHandles(hs);
+	SendForecast(hs);
+	if (!m_forecastPos.empty())
+		GameLog("[room %d] airdrop forecast %d, first at (%.1f, %.1f), drop in %dms", m_roomNo, (int)m_forecastPos.size(),
+			m_forecastPos[0].first, m_forecastPos[0].second, TimeDiff(m_nextAirdropAt, now));
+}
+
+void BattleContent::SendForecast(const std::vector<unsigned long long>& hs)
+{
+	if (hs.empty()) return;
+	Packet* pkt = Packet::Alloc();
+	W16(pkt, PT_SC_AIRDROP_FORECAST);
+	W32(pkt, m_nextAirdropAt);
+	W8(pkt, (uint8_t)m_forecastPos.size());
+	for (auto& xz : m_forecastPos) { WF(pkt, xz.first); WF(pkt, xz.second); }
+	Multicast(hs, pkt);
+}
+
+// 위치: 3x3 섹터 묶음(가운데 섹터 기준) 중 생존 인원 최다, taken(기존·예정 에어드랍 섹터)과 체비셰프 거리 3 미만 제외
+bool BattleContent::PickAirdropPos(const std::vector<std::pair<int, int>>& taken, float& outX, float& outZ, int& groupAlive)
+{
 	const int N = MapConst::SectorCount;
 	std::vector<int> alive(N * N, 0);
 	int total = 0;
@@ -1260,14 +1475,13 @@ bool BattleContent::TryAirdrop(uint32_t now)
 		}
 	if (total == 0) return false;
 
-	// 3x3 묶음(가운데 섹터 기준) 중 생존 인원 최다. 기존 에어드랍과 체비셰프 거리 3 미만 제외
 	int best = -1;
 	std::vector<int> cands;
 	for (int cy = 0; cy < N; cy++)
 		for (int cx = 0; cx < N; cx++)
 		{
 			bool tooClose = false;
-			for (auto& e : existing)
+			for (auto& e : taken)
 				if (std::max(abs(e.first - cx), abs(e.second - cy)) < 3) { tooClose = true; break; }
 			if (tooClose) continue;
 			int sum = 0;
@@ -1284,10 +1498,15 @@ bool BattleContent::TryAirdrop(uint32_t now)
 	const float S = (float)MapConst::SectorSize;
 	const float margin = 4.0f;
 	std::uniform_real_distribution<float> ux(csx * S + margin, (csx + 1) * S - margin), uz(csy * S + margin, (csy + 1) * S - margin);
-	float x = Clampf(ux(m_rng), MapConst::MinPos, MapConst::MaxPos);
-	float z = Clampf(uz(m_rng), MapConst::MinPos, MapConst::MaxPos);
-	m_obstacles.FindFree(x, z, 1.0f, 20.0f);
+	outX = Clampf(ux(m_rng), MapConst::MinPos, MapConst::MaxPos);
+	outZ = Clampf(uz(m_rng), MapConst::MinPos, MapConst::MaxPos);
+	m_obstacles.FindFree(outX, outZ, 1.0f, 20.0f);
+	groupAlive = best;
+	return true;
+}
 
+void BattleContent::CreateAirdrop(float x, float z, int groupAlive)
+{
 	Container c{};
 	c.id = m_nextContainerId++;
 	if (m_nextContainerId == 0) m_nextContainerId = 1;
@@ -1309,8 +1528,7 @@ bool BattleContent::TryAirdrop(uint32_t now)
 	AllHandles(hs);
 	SendAirdrop(hs, c, true);
 	GameLog("[room %d] airdrop %u at sector (%d,%d) pos (%.1f, %.1f), group alive %d, weapon %d",
-		m_roomNo, c.id, c.sx, c.sy, c.x, c.z, best, c.specialId);
-	return true;
+		m_roomNo, c.id, c.sx, c.sy, c.x, c.z, groupAlive, c.specialId);
 }
 
 void BattleContent::SendAirdrop(const std::vector<unsigned long long>& hs, const Container& c, bool isNew)
@@ -1446,6 +1664,14 @@ void BattleContent::CollectView(GamePlayer* center, GamePlayer* exclude, std::ve
 	});
 }
 
+void BattleContent::CollectViewOfSector(int sx, int sy, std::vector<unsigned long long>& out) const
+{
+	out.clear();
+	m_sectors.ForEachInView(sx, sy, m_cfg.viewSectorRadius, [&](GamePlayer* q) {
+		if (!q->disconnecting) out.push_back(q->sessionHandle);
+	});
+}
+
 void BattleContent::Handles(const std::vector<GamePlayer*>& players, std::vector<unsigned long long>& out) const
 {
 	out.clear();
@@ -1453,14 +1679,14 @@ void BattleContent::Handles(const std::vector<GamePlayer*>& players, std::vector
 	for (GamePlayer* q : players) out.push_back(q->sessionHandle);
 }
 
-void BattleContent::WriteCreateEntry(Packet* pkt, GamePlayer* p) const
+void BattleContent::WriteCreateEntry(Packet* pkt, GamePlayer* p, uint8_t flags) const
 {
 	W32(pkt, p->playerId);
 	WName(pkt, p->name, NAME_LEN);
 	WF(pkt, p->x); WF(pkt, p->z); WF(pkt, p->vx); WF(pkt, p->vz); WF(pkt, p->aim);
 	W16(pkt, p->hp); W16(pkt, p->maxHp);
 	W8(pkt, p->weaponId);
-	W8(pkt, 0);
+	W8(pkt, flags);     // bit0 = 방금 스폰
 }
 
 void BattleContent::SendCreateList(GamePlayer* to, const std::vector<GamePlayer*>& list)
@@ -1489,12 +1715,12 @@ void BattleContent::SendDeleteList(GamePlayer* to, const std::vector<GamePlayer*
 	}
 }
 
-Packet* BattleContent::BuildCreateOne(GamePlayer* p) const
+Packet* BattleContent::BuildCreateOne(GamePlayer* p, uint8_t flags) const
 {
 	Packet* pkt = Packet::Alloc();
 	W16(pkt, PT_SC_CREATE_CHARACTERS);
 	W8(pkt, 1);
-	WriteCreateEntry(pkt, p);
+	WriteCreateEntry(pkt, p, flags);
 	return pkt;
 }
 
