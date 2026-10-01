@@ -34,6 +34,7 @@ namespace Blockov.Game
 
             DrawCoverBars(cam);
             DrawNameplates(cam);
+            DrawAirdropArrows(cam);
             DrawKillFeed();
             DrawTop3();
             DrawStatus();
@@ -54,34 +55,138 @@ namespace Blockov.Game
             else if (_gc.LocalDead) DrawCenterMessage("사망했습니다...");
         }
 
-        // 파괴 가능 엄폐물: 맞은 뒤 3초 체력 바 / 파괴된 동안 재생 게이지(남은 초, 1초 단위) (3.6)
+        // 마우스 위치 (IMGUI 좌표가 아닌 화면 좌표, 아래가 0). 없으면 null
+        static Vector2? MouseScreen()
+        {
+#if ENABLE_INPUT_SYSTEM
+            var m = UnityEngine.InputSystem.Mouse.current;
+            if (m != null) return m.position.ReadValue();
+#endif
+            return null;
+        }
+
+        // 마우스가 가리키는 파괴 가능 엄폐물 (지면 y=0 또는 상자 윗면 y=2.0 평면과의 교점에서 0.5m 이내 칸)
+        static int HoveredCover(Camera cam)
+        {
+            var mp = MouseScreen();
+            if (cam == null || mp == null) return -1;
+            var ray = cam.ScreenPointToRay(mp.Value);
+            foreach (float h in new[] { CoverManager.IntactHeight, 0f })
+            {
+                if (Mathf.Abs(ray.direction.y) < 1e-4f) continue;
+                float t = (h - ray.origin.y) / ray.direction.y;
+                if (t <= 0) continue;
+                var p = ray.origin + ray.direction * t;
+                int cx = Mathf.FloorToInt(p.x), cz = Mathf.FloorToInt(p.z);
+                int best = -1; float bestD = 0.5f;
+                for (int dz = -1; dz <= 1; dz++)
+                    for (int dx = -1; dx <= 1; dx++)
+                    {
+                        int id = ObstacleMap.CoverAt(cx + dx, cz + dz);
+                        if (id < 0) continue;
+                        float nx = Mathf.Clamp(p.x, cx + dx, cx + dx + 1), nz = Mathf.Clamp(p.z, cz + dz, cz + dz + 1);
+                        float d = new Vector2(p.x - nx, p.z - nz).magnitude;
+                        if (d <= bestD) { bestD = d; best = id; }
+                    }
+                if (best >= 0) return best;
+            }
+            return -1;
+        }
+
+        // 파괴 가능 엄폐물: 마우스로 가리킨 것만 — 멀쩡하면 체력 바, 파괴됐으면 재생 게이지(남은 초, 1초 단위) (3.6)
         void DrawCoverBars(Camera cam)
         {
             var cm = _gc.Covers;
-            if (cam == null || cm == null) return;
+            if (cam == null || cm == null || _gc.ShowMinimap) return;
+            var c = cm.Get(HoveredCover(cam));
+            if (c == null) return;
             float w = UiKit.Px(54), h = UiKit.Px(7);
             var lab = UiKit.Sized(UiKit.LabelCenter, 12);
-            foreach (var c in cm.Active)
+            float top = c.Destroyed ? CoverManager.BrokenHeight : CoverManager.IntactHeight;
+            Vector3 sp = cam.WorldToScreenPoint(new Vector3(c.Center.x, top + 0.4f, c.Center.y));
+            if (sp.z < 0) return;
+            var r = new Rect(sp.x - w / 2, Screen.height - sp.y - h, w, h);
+            UiKit.Rect(new Rect(r.x - 1, r.y - 1, r.width + 2, r.height + 2), new Color(0, 0, 0, 0.7f));
+            if (c.Destroyed)
             {
-                float top = c.Destroyed ? CoverManager.BrokenHeight : CoverManager.IntactHeight;
-                Vector3 sp = cam.WorldToScreenPoint(new Vector3(c.Center.x, top + 0.4f, c.Center.y));
-                if (sp.z < 0 || sp.x < -w || sp.x > Screen.width + w || sp.y < -h || sp.y > Screen.height + h) continue;
-                var r = new Rect(sp.x - w / 2, Screen.height - sp.y - h, w, h);
-                UiKit.Rect(new Rect(r.x - 1, r.y - 1, r.width + 2, r.height + 2), new Color(0, 0, 0, 0.7f));
-                if (c.Destroyed)
-                {
-                    int remain = CoverManager.RemainingSeconds(c);
-                    float fill = c.RegenSec > 0 ? 1f - (float)remain / c.RegenSec : 1f;
-                    UiKit.Rect(new Rect(r.x, r.y, r.width * Mathf.Clamp01(fill), r.height), new Color(0.4f, 0.75f, 1f, 0.95f));
-                    UiKit.ShadowLabel(new Rect(r.x - UiKit.Px(20), r.y - UiKit.Px(17), r.width + UiKit.Px(40), UiKit.Px(16)),
-                        remain > 0 ? $"재생 {remain}초" : "재생 대기", lab, new Color(0.8f, 0.92f, 1f));
-                }
-                else
-                {
-                    float fill = c.MaxHp > 0 ? (float)c.Hp / c.MaxHp : 0f;
-                    UiKit.Rect(new Rect(r.x, r.y, r.width * fill, r.height), new Color(1f, 0.55f, 0.25f, 0.95f));
-                }
+                int remain = CoverManager.RemainingSeconds(c);
+                float fill = c.RegenSec > 0 ? 1f - (float)remain / c.RegenSec : 1f;
+                UiKit.Rect(new Rect(r.x, r.y, r.width * Mathf.Clamp01(fill), r.height), new Color(0.4f, 0.75f, 1f, 0.95f));
+                UiKit.ShadowLabel(new Rect(r.x - UiKit.Px(20), r.y - UiKit.Px(17), r.width + UiKit.Px(40), UiKit.Px(16)),
+                    remain > 0 ? $"재생 {remain}초" : "재생 대기", lab, new Color(0.8f, 0.92f, 1f));
             }
+            else
+            {
+                float fill = c.MaxHp > 0 ? (float)c.Hp / c.MaxHp : 0f;
+                UiKit.Rect(new Rect(r.x, r.y, r.width * fill, r.height), new Color(1f, 0.55f, 0.25f, 0.95f));
+                UiKit.ShadowLabel(new Rect(r.x - UiKit.Px(20), r.y - UiKit.Px(17), r.width + UiKit.Px(40), UiKit.Px(16)),
+                    $"{c.Hp}/{c.MaxHp}", lab, new Color(1f, 0.85f, 0.7f));
+            }
+        }
+
+        // 화면 밖 에어드랍·투하 예정 위치 방향 화살표 (12.3): 화면 가장자리에 작은 세모 + 거리(·남은 초)
+        static Texture2D s_triFill, s_triOutline;
+        static Texture2D Triangle(bool filled)
+        {
+            const int N = 32;
+            var tex = new Texture2D(N, N, TextureFormat.RGBA32, false) { filterMode = FilterMode.Bilinear, wrapMode = TextureWrapMode.Clamp };
+            var px = new Color32[N * N];
+            // 오른쪽(+X)을 가리키는 세모: 꼭짓점 (N-2, N/2), 밑변 x=2
+            Vector2 a = new Vector2(N - 2, N / 2f), b = new Vector2(2, 3), c = new Vector2(2, N - 3);
+            float Edge(Vector2 p0, Vector2 p1, Vector2 p) => (p1.x - p0.x) * (p.y - p0.y) - (p1.y - p0.y) * (p.x - p0.x);
+            float area = Edge(a, b, c);
+            for (int y = 0; y < N; y++)
+                for (int x = 0; x < N; x++)
+                {
+                    var p = new Vector2(x + 0.5f, y + 0.5f);
+                    float w0 = Edge(b, c, p) / area, w1 = Edge(c, a, p) / area, w2 = Edge(a, b, p) / area;
+                    bool inside = w0 >= 0 && w1 >= 0 && w2 >= 0;
+                    bool edge = inside && Mathf.Min(w0, Mathf.Min(w1, w2)) < 0.12f;
+                    px[y * N + x] = (filled ? inside : edge) ? new Color32(255, 255, 255, 255) : new Color32(0, 0, 0, 0);
+                }
+            tex.SetPixels32(px);
+            tex.Apply(false, true);
+            return tex;
+        }
+
+        void DrawAirdropArrows(Camera cam)
+        {
+            var cm = _gc.Containers;
+            if (cam == null || cm == null || _gc.ShowMinimap) return;
+            if (s_triFill == null) { s_triFill = Triangle(true); s_triOutline = Triangle(false); }
+            var me = _gc.LocalView.PosXZ;
+            var lab = UiKit.Sized(UiKit.LabelCenter, 12);
+            void Arrow(Vector2 world, bool forecast)
+            {
+                Vector3 sp = cam.WorldToScreenPoint(new Vector3(world.x, 0.5f, world.y));
+                bool behind = sp.z < 0;
+                var gui = new Vector2(sp.x, Screen.height - sp.y);
+                if (!behind && gui.x >= 0 && gui.x <= Screen.width && gui.y >= 0 && gui.y <= Screen.height) return;   // 화면 안이면 표시 안 함
+                var center = new Vector2(Screen.width / 2f, Screen.height / 2f);
+                var dir = gui - center;
+                if (behind) dir = -dir;
+                if (dir.sqrMagnitude < 1e-3f) return;
+                float margin = UiKit.Px(24);
+                float hx = Screen.width / 2f - margin, hy = Screen.height / 2f - margin;
+                float k = Mathf.Min(hx / Mathf.Max(1e-3f, Mathf.Abs(dir.x)), hy / Mathf.Max(1e-3f, Mathf.Abs(dir.y)));
+                var pos = center + dir * k;
+                float ang = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg;
+                float size = UiKit.Px(18);
+                var old = GUI.matrix;
+                var oldC = GUI.color;
+                GUIUtility.RotateAroundPivot(ang, pos);
+                GUI.color = new Color(1f, 0.55f, 0.1f, forecast ? 0.95f : 1f);
+                GUI.DrawTexture(new Rect(pos.x - size / 2, pos.y - size / 2, size, size), forecast ? s_triOutline : s_triFill);
+                GUI.matrix = old;
+                GUI.color = oldC;
+                // 거리 (투하 예정은 남은 초도) — 세모 안쪽(화면 중심 쪽)에
+                var lp = pos - dir.normalized * UiKit.Px(26);
+                int dist = Mathf.RoundToInt((world - me).magnitude);
+                string text = forecast ? $"{dist}m · {cm.ForecastRemainingSeconds / 60}:{cm.ForecastRemainingSeconds % 60:00}" : $"{dist}m";
+                UiKit.ShadowLabel(new Rect(lp.x - UiKit.Px(50), lp.y - UiKit.Px(9), UiKit.Px(100), UiKit.Px(18)), text, lab, new Color(1f, 0.85f, 0.5f));
+            }
+            foreach (var ad in cm.Airdrops) Arrow(ad.Pos, false);
+            foreach (var fp in cm.ForecastPositions) Arrow(fp, true);
         }
 
         void DrawNameplates(Camera cam)
@@ -89,6 +194,8 @@ namespace Blockov.Game
             if (cam == null) return;
             var style = UiKit.Sized(UiKit.LabelCenter, 15);
             float barW = UiKit.Px(60), barH = UiKit.Px(6);
+            var mouse = MouseScreen();
+            float hover = UiKit.Px(40);
 
             void Plate(CharacterView v, bool local)
             {
@@ -98,6 +205,13 @@ namespace Blockov.Game
                 float x = sp.x, y = Screen.height - sp.y;
                 UiKit.ShadowLabel(new Rect(x - 100, y - UiKit.Px(30), 200, UiKit.Px(22)), v.DisplayName, style,
                     local ? new Color(0.6f, 0.85f, 1f) : Color.white);
+                // 다른 플레이어 체력 바는 마우스로 그 캐릭터를 가리킬 때만 (캐릭터 중심과 화면 거리 40px 이내, 12.3)
+                if (!local)
+                {
+                    if (mouse == null) return;
+                    Vector3 body = cam.WorldToScreenPoint(v.transform.position + Vector3.up * 1.0f);
+                    if ((new Vector2(body.x, body.y) - mouse.Value).sqrMagnitude > hover * hover) return;
+                }
                 float t = v.MaxHp > 0 ? (float)v.Hp / v.MaxHp : 0;
                 UiKit.Bar(new Rect(x - barW / 2, y - UiKit.Px(6), barW, barH), t,
                     local ? new Color(0.3f, 0.75f, 1f) : new Color(0.95f, 0.3f, 0.25f), new Color(0, 0, 0, 0.6f));

@@ -9,7 +9,7 @@ namespace Blockov.Game
     /// 런타임 엄폐물 격자 (1m x 1m, 1500 x 1500 = 섹터 50m x 30). 에디터 도구(Blockov/Map/Obstacle Map Importer)가
     /// map/obstacles.bmp에서 만든 Resources/Map/obstacle_map.bytes(병합된 사각형 목록)를 읽어 비트셋으로 복원한다.
     ///  - Wall: 이동·총알 차단,  Low: 이동만 차단(총알 통과)
-    ///  - Dest: 파괴 가능 엄폐물 (game-spec 3.6). 멀쩡하면 이동·총알 차단, 파괴되면(반 블럭) 이동만 차단
+    ///  - Dest: 파괴 가능 엄폐물 (game-spec 3.6). 멀쩡하면 이동·총알 차단, 파괴되면 통과
     /// 서버 GameServer/ObstacleMap.cpp와 같은 규칙·같은 해시(FNV-1a)·같은 엄폐물 번호를 사용한다.
     /// </summary>
     public static class ObstacleMap
@@ -143,7 +143,14 @@ namespace Blockov.Game
             return (set[i >> 6] & (1UL << (int)(i & 63))) != 0;
         }
 
-        public static bool BlocksMove(int x, int z) => Bit(_move, x, z);
+        /// <summary>이동 차단: 벽·낮은 엄폐물·멀쩡한 파괴 가능 엄폐물 (파괴된 엄폐물은 통과, game-spec 3.6)</summary>
+        public static bool BlocksMove(int x, int z)
+        {
+            if (!Bit(_move, x, z)) return false;
+            if (_destroyed == null || x < 0 || z < 0 || x >= Size || z >= Size) return true;
+            int c = _coverOf[(long)z * Size + x] - 1;
+            return c < 0 || !_destroyed[c];
+        }
         public static bool BlocksBullet(int x, int z) => Bit(_bullet, x, z);
 
         /// <summary>원(x,z,r)이 이동 차단 셀과 겹치는가 (서버 CircleBlocked와 동일)</summary>
@@ -201,7 +208,7 @@ namespace Blockov.Game
             var cols = new Color32[px * px];
             var ground = new Color32(62, 70, 58, 255);
             var gridLine = new Color32(74, 83, 69, 255);
-            var low = new Color32(170, 150, 110, 255);
+            var low = new Color32(222, 205, 150, 255);
             var wall = new Color32(20, 22, 26, 255);
             var dest = new Color32(170, 60, 50, 255);
             float scale = (float)px / Size;

@@ -14,6 +14,7 @@ namespace Blockov.Game
         public const string Pistol = "sfx_pistol", Shotgun = "sfx_shotgun", Sniper = "sfx_sniper";
         public const string Hit = "sfx_hit", Hurt = "sfx_hurt", Kill = "sfx_kill";
         public const string CoverHit = "sfx_cover_hit", CoverBreak = "sfx_cover_break", Spawn = "sfx_spawn";
+        public const string Bandage = "sfx_bandage", Heal = "sfx_heal";
 
         const int MaxVoices = 16;
         const float FullVolumeDistance = 10f, SilentDistance = 100f, PanDistance = 30f, MaxPan = 0.8f;

@@ -54,3 +54,15 @@ tt=t(0.8); n=len(tt); sweep=np.sin(2*np.pi*np.cumsum(300+900*tt/0.8)/SR)
 x=sweep*np.sin(np.pi*tt/0.8)*0.6 + lp(noise(n),0.6)*np.sin(np.pi*tt/0.8)*0.25
 m=tt>=0.45; tl=tt[m]-0.45; x[m]+=0.5*np.sin(2*np.pi*1760*tl)*np.exp(-tl/0.12)
 save('sfx_spawn', x, 0.6)
+# 붕대: 천 감는 소리 (필터된 노이즈 스윕 3번, 약 1초)
+tt=t(1.0); n=len(tt); x=np.zeros(n)
+for k,st in enumerate([0.0,0.32,0.64]):
+    m=(tt>=st)&(tt<st+0.3); tl=tt[m]-st
+    x[m]+=lp(noise(m.sum()),0.35+0.1*k)*np.sin(np.pi*tl/0.3)**2
+save('sfx_bandage', x, 0.6)
+# 회복: 부드러운 상승 3음
+tt=t(0.6); n=len(tt); x=np.zeros(n)
+for f,st in [(660,0.0),(880,0.09),(1100,0.18)]:
+    m=tt>=st; tl=tt[m]-st
+    x[m]+=np.sin(2*np.pi*f*tl)*np.exp(-tl/0.2)*np.clip(tl/0.01,0,1)
+save('sfx_heal', x, 0.55)

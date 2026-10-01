@@ -31,7 +31,7 @@ namespace Blockov.EditorTools
 
         string _bmpPath;
         float _wallHeight = 2.5f;
-        float _lowHeight = 0.9f;
+        float _lowHeight = 1.1f;
         int _chunkSize = 256;
 
         [MenuItem("Blockov/Map/Obstacle Map Importer...", priority = 1)]
@@ -76,7 +76,7 @@ namespace Blockov.EditorTools
         [MenuItem("Blockov/Map/Import Obstacles (default BMP)", priority = 2)]
         public static void ImportDefault()
         {
-            Debug.Log(Import(EditorPrefs.GetString(PrefBmp, DefaultBmpPath), 2.5f, 0.9f, 256));
+            Debug.Log(Import(EditorPrefs.GetString(PrefBmp, DefaultBmpPath), 2.5f, 1.1f, 256));
         }
 
 
@@ -357,13 +357,20 @@ namespace Blockov.EditorTools
         {
             var v = new List<Vector3>();
             var n = new List<Vector3>();
+            var uv = new List<Vector2>();     // 윗면 = 월드 X·Z, 옆면 = 둘레 방향·높이 (1m = 1). 낮은 엄폐물 줄무늬 텍스처용
             var wallTris = new List<int>();
             var lowTris = new List<int>();
+            Vector2 UV(Vector3 p, Vector3 normal)
+            {
+                if (normal == Vector3.up) return new Vector2(p.x, p.z);
+                return new Vector2(Mathf.Abs(normal.x) > 0.5f ? p.z : p.x, p.y);
+            }
             void Quad(Vector3 a, Vector3 b, Vector3 c, Vector3 d, Vector3 normal, List<int> tris)
             {
                 int s = v.Count;
                 v.Add(a); v.Add(b); v.Add(c); v.Add(d);
                 n.Add(normal); n.Add(normal); n.Add(normal); n.Add(normal);
+                uv.Add(UV(a, normal)); uv.Add(UV(b, normal)); uv.Add(UV(c, normal)); uv.Add(UV(d, normal));
                 tris.Add(s); tris.Add(s + 1); tris.Add(s + 2);
                 tris.Add(s); tris.Add(s + 2); tris.Add(s + 3);
             }
@@ -381,6 +388,7 @@ namespace Blockov.EditorTools
             var mesh = new Mesh { indexFormat = v.Count > 65000 ? IndexFormat.UInt32 : IndexFormat.UInt16 };
             mesh.SetVertices(v);
             mesh.SetNormals(n);
+            mesh.SetUVs(0, uv);
             mesh.subMeshCount = 2;
             mesh.SetTriangles(wallTris, 0);
             mesh.SetTriangles(lowTris, 1);

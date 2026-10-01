@@ -317,11 +317,11 @@ namespace Blockov.Game
                 if (LocalView != null) LocalView.OnDamaged(hp);
                 SoundManager.Play(SoundManager.Hurt);
             }
-            if (attacker == GameSession.MyPlayerId && victim != GameSession.MyPlayerId) SoundManager.Play(SoundManager.Hit);
             else if (_remotes.TryGetValue(victim, out var rc) && rc != null)
             {
                 rc.OnDamaged(hp);
             }
+            if (attacker == GameSession.MyPlayerId && victim != GameSession.MyPlayerId) SoundManager.Play(SoundManager.Hit);
 
             // 해당 사격의 관찰자 탄 제거 (연출)
             for (int i = _observerShots.Count - 1; i >= 0; i--)

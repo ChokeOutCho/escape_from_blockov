@@ -105,6 +105,7 @@ namespace Blockov.Game
         /// <summary>서버 SC_HP(본인) 수신: 붕대 완료</summary>
         public void OnHealed()
         {
+            if (_usingBandage) SoundManager.Play(SoundManager.Heal);
             _usingBandage = false;
         }
 
@@ -218,6 +219,7 @@ namespace Blockov.Game
             _usingBandage = true;
             _bandageStart = Time.time;
             NetworkManager.Instance.Send(new PacketWriter(PacketType.CS_USE_BANDAGE));
+            SoundManager.Play(SoundManager.Bandage);
         }
 
         void StartRoll(Vector2 dir)

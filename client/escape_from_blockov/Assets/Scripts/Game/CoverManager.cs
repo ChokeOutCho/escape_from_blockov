@@ -6,13 +6,13 @@ namespace Blockov.Game
 {
     /// <summary>
     /// 파괴 가능한 엄폐물 (game-spec 3.6, 씬 TestArena의 "Covers" 오브젝트).
-    ///  - 시작 시 obstacle_map.bytes의 엄폐물마다 상자를 만든다 (멀쩡 2.0m, 반 블럭 1.0m, 재질 Resources/Materials/M_Cover)
-    ///  - SC_COVER_HP: 체력 바(3초) / SC_COVER_STATE: 파괴·재생 → 높이·총알 판정(ObstacleMap.SetDestroyed)·재생 게이지
-    ///  - 재생 게이지: 서버가 알려준 파괴 시각 + RegenSec 기준으로 남은 초를 1초 단위로 표시 (GameHUD가 그림)
+    ///  - 시작 시 obstacle_map.bytes의 엄폐물마다 상자를 만든다 (멀쩡 2.0m, 파괴되면 0.15m 잔해, 재질 Resources/Materials/M_Cover)
+    ///  - SC_COVER_HP: 체력 / SC_COVER_STATE: 파괴·재생 → 높이·이동·총알 판정(ObstacleMap.SetDestroyed)
+    ///  - 체력 바·재생 게이지는 마우스로 가리킨 엄폐물만 GameHUD가 그림. 재생 게이지는 서버가 알려준 파괴 시각 + RegenSec 기준, 1초 단위
     /// </summary>
     public sealed class CoverManager : MonoBehaviour
     {
-        public const float IntactHeight = 2.0f, BrokenHeight = 1.0f;
+        public const float IntactHeight = 2.0f, BrokenHeight = 0.15f;
         public const float HpBarSeconds = 3f;
         const string MaterialPath = "Materials/M_Cover";
 
@@ -59,6 +59,7 @@ namespace Blockov.Game
         {
             int n = ObstacleMap.CoverCount;
             _states = new State[n];
+            for (int id = 0; id < n; id++) ObstacleMap.SetDestroyed(id, false);    // 이전 판의 상태 초기화 (서버가 입장 시 파괴 목록을 보냄)
             var mat = Resources.Load<Material>(MaterialPath);
             if (mat == null)
             {
