@@ -21,6 +21,11 @@
 #include <deque>
 #include <string>
 #include <vector>
+#include <filesystem>
+#include <ctime>
+#ifdef _WIN32
+#include <share.h>
+#endif
 
 // 서버 시각(ms) = 서버 프로세스 시작 기준 경과 ms. UINT32 wrap 허용 → 비교는 TimeDiff로
 inline uint32_t GetServerTimeMs()
@@ -43,12 +48,47 @@ struct GameLogBuffer
 
 	static GameLogBuffer& Instance() { static GameLogBuffer b; return b; }
 
+	FILE* file = nullptr;
+	bool fileTried = false;
+
 	void Push(const char* msg)
 	{
 		std::lock_guard<std::mutex> g(lock);
 		lines.emplace_back(msg);
 		total++;
 		if (lines.size() > MAX_LINES) lines.pop_front();
+		WriteFile(msg);
+	}
+
+	// 파일로도 남긴다: 실행 폴더 syslogs/game_YYYYMMDD_HHMMSS.log (서버 실행마다 새 파일, .gitignore 대상)
+	void WriteFile(const char* msg)
+	{
+		if (!fileTried)
+		{
+			fileTried = true;
+			std::error_code ec;
+			std::filesystem::create_directories("syslogs", ec);
+			time_t t = time(nullptr);
+			struct tm lt;
+#ifdef _WIN32
+			localtime_s(&lt, &t);
+#else
+			localtime_r(&t, &lt);
+#endif
+			char path[64];
+			strftime(path, sizeof(path), "syslogs/game_%Y%m%d_%H%M%S.log", &lt);
+#ifdef _WIN32
+			file = _fsopen(path, "a", _SH_DENYNO);     // 서버 실행 중에도 다른 프로그램이 읽을 수 있게 (fopen_s는 공유 거부)
+#else
+			file = fopen(path, "a");
+#endif
+		}
+		if (file)
+		{
+			fputs(msg, file);
+			fputc('\n', file);
+			fflush(file);
+		}
 	}
 	// 최근 n줄 복사
 	std::vector<std::string> Tail(size_t n)

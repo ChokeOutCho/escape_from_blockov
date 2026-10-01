@@ -183,6 +183,16 @@ class Bot {
   a.send(new W(T.CS_HIT_REPORT).u8(1).u32(777).u8(0).u32(ec.id).f(ec.x).f(ec.z));
   check((await c.wait(T.SC_DAMAGE, () => true, 500)) === null, '존재하지 않는 ShotSeq 거부');
 
+  console.log('== 위반 카운트 (10.3)');
+  seq++;
+  a.send(new W(T.CS_FIRE).u32(seq).u8(1).f(ax).f(az).f(1).f(0).u32(serverNow() - 100).u16(0));
+  await sleep(1300);   // 보고 시한(사거리/탄속 + 되감기 500 + 200ms) 경과
+  for (let i = 0; i < 25; i++) a.send(new W(T.CS_HIT_REPORT).u8(1).u32(seq).u8(0).u32(ec.id).f(ec.x).f(ec.z));
+  check((await a.wait(T.SC_KICK, () => true, 600)) === null, '보고 시한 초과 명중 보고 25회 → 위반으로 세지 않음 (킥 없음)');
+  for (let i = 0; i < 20; i++) a.send(new W(T.CS_HIT_REPORT).u8(1).u32(1000 + i).u8(0).u32(ec.id).f(ec.x).f(ec.z));
+  const ck = await a.wait(T.SC_KICK, () => true, 800);
+  check(ck && ck.reason === 3, '보낸 적 없는 ShotSeq 명중 보고 20회 → SC_KICK(CHEAT_SUSPECT)');
+
   console.log('== 오류 처리');
   const v = new Bot('V'); await v.connect();
   v.send(new W(T.CS_ENTER_GAME).u32(1).name('old'));

@@ -107,6 +107,33 @@ struct ViolationCounter
 
 enum class PlayerState : uint8_t { Alive, Dead };
 
+// 위반 종류 (game-spec 10.4). 킥 로그에 종류별 횟수와 마지막 종류를 남긴다
+enum ViolationKind : uint8_t
+{
+	VIOL_NONE = 0,
+	// 이동 위반 (5초 10회)
+	VIOL_MOVE_VALUE, VIOL_MOVE_SPEED, VIOL_MOVE_BLOCKED, VIOL_MOVE_BUDGET, VIOL_ROLL_COOLDOWN,
+	// 부정 행위 (10초 20회)
+	VIOL_FIRE_WEAPON, VIOL_FIRE_SEQ, VIOL_FIRE_VALUE, VIOL_FIRE_DIR, VIOL_FIRE_ORIGIN, VIOL_FIRE_FUTURE, VIOL_FIRE_RATE,
+	VIOL_HIT_FAKE_SHOT, VIOL_HIT_WEAPON, VIOL_HIT_PELLET, VIOL_HIT_PIERCE, VIOL_HIT_DUP, VIOL_HIT_SELF,
+	VIOL_HIT_VALUE, VIOL_HIT_RANGE, VIOL_HIT_ANGLE, VIOL_HIT_POSITION, VIOL_HIT_WALL,
+	VIOL_ROLL_DIR, VIOL_SLOT, VIOL_ITEM,
+	VIOL_KIND_COUNT
+};
+
+inline const char* ViolationName(uint8_t k)
+{
+	static const char* names[VIOL_KIND_COUNT] = {
+		"-",
+		"move:value", "move:speed", "move:blocked", "move:budget", "roll:cooldown",
+		"fire:weapon", "fire:seq", "fire:value", "fire:dir", "fire:origin>3m", "fire:viewtime-future", "fire:rate",
+		"hit:no-shot(future-seq)", "hit:weapon", "hit:pellet", "hit:pierce", "hit:dup-target", "hit:self",
+		"hit:value", "hit:range", "hit:angle", "hit:position", "hit:wall",
+		"roll:dir", "switch:slot", "take:item",
+	};
+	return k < VIOL_KIND_COUNT ? names[k] : "?";
+}
+
 class GamePlayer
 {
 public:
@@ -163,6 +190,10 @@ public:
 
 	ViolationCounter moveViolations;
 	ViolationCounter cheatViolations;
+	uint16_t violationCounts[VIOL_KIND_COUNT] = {};    // 입장 후 종류별 누적 (킥 로그용)
+	uint8_t lastMoveViolation = VIOL_NONE;
+	uint8_t lastCheatViolation = VIOL_NONE;
+	uint32_t ignoredHits = 0;                           // 위반으로 세지 않은 명중 보고 거부 (대상 사망 등)
 
 	PositionHistory history;
 	ShotRecord shots[SHOT_RING];

@@ -62,8 +62,9 @@ private:
 	void HandleBandage(GamePlayer* p, uint32_t now);
 	void HandleOpen(GamePlayer* p, uint32_t id, uint32_t now);
 	void HandleTake(GamePlayer* p, uint32_t id, uint8_t item, uint32_t now);
-	bool ValidateHit(GamePlayer* shooter, uint32_t shotSeq, uint8_t pellet, uint32_t targetId,
-	                 float hx, float hz, uint32_t now, GamePlayer** outTarget, const WeaponDef** outWeapon);
+	// 0 = 통과, >0 = 위반(ViolationKind, 부정 카운트), <0 = 정상 플레이에서도 생기는 거부(세지 않음)
+	int ValidateHit(GamePlayer* shooter, uint32_t shotSeq, uint8_t pellet, uint32_t targetId,
+	                float hx, float hz, uint32_t now, GamePlayer** outTarget, const WeaponDef** outWeapon);
 
 	// 게임 규칙
 	void ChooseSpawn(float& outX, float& outZ);
@@ -75,7 +76,9 @@ private:
 	void RemoveFromWorld(GamePlayer* p);
 	void UpdateRanking(bool force);
 	void ComputeTop3(std::vector<RankEntry>& out) const;
-	void CountCheat(GamePlayer* p, uint32_t now);
+	void CountCheat(GamePlayer* p, uint32_t now, uint8_t kind);
+	void CountMoveViolation(GamePlayer* p, uint32_t now, uint8_t kind);
+	void LogKickDetail(GamePlayer* p, uint8_t reason);
 	void UpdateOnlineCount(uint32_t now);
 
 	// v6 아이템·컨테이너
