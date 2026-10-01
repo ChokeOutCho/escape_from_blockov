@@ -56,8 +56,7 @@ void BattleContent::OnBegin()
 	m_lastSecondTick = m_lastUpdateTime;
 	m_lastContainerCheck = m_lastUpdateTime;
 	// 에어드랍: 서버 업타임이 airdrop_interval_ms의 배수가 될 때마다 (19.6)
-	if (m_cfg.airdropIntervalMs > 0)
-		m_nextAirdropAt = (m_lastUpdateTime / (uint32_t)m_cfg.airdropIntervalMs + 1) * (uint32_t)m_cfg.airdropIntervalMs;
+	m_airdropActive = false;    // 빈 방에 첫 플레이어가 들어오면 시작 (22.4)
 	GameLog("[room %d] begin (tick %dms, capacity %d)", m_roomNo, m_cfg.battleTickMs, m_cfg.roomCapacity);
 }
 
@@ -108,6 +107,14 @@ void BattleContent::OnEnter(unsigned long long sessionHandle, void* completionKe
 	m_sectors.Add(p, MapConst::ToSector(p->x), MapConst::ToSector(p->z));
 
 	SendEnterSequence(p);
+
+	// 빈 방에 첫 플레이어 → 에어드랍 즉시 1회차 + 주기 타이머 시작 (22.4)
+	if (m_players.size() == 1 && m_cfg.airdropIntervalMs > 0)
+	{
+		m_airdropActive = true;
+		m_nextAirdropAt = now + (uint32_t)m_cfg.airdropIntervalMs;
+		AirdropRound(now);
+	}
 
 	// 주변에 신규 1명 알림
 	std::vector<GamePlayer*> view;
@@ -900,6 +907,7 @@ void BattleContent::OnRelease(unsigned long long sessionHandle, SESSION_LEAVE_CO
 	m_reserved.fetch_sub(1);
 	GameLog("[room %d] player %u left (code %d, score %u)", m_roomNo, p->playerId, (int)code, p->score);
 	delete p;
+	if (m_players.empty()) m_airdropActive = false;    // 방이 비면 타이머 정지 (남은 에어드랍은 유지)
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -1095,8 +1103,9 @@ void BattleContent::HandleTake(GamePlayer* p, uint32_t id, uint8_t item, uint32_
 	}
 	SendInventory(p);
 	BroadcastContents(c);
-	if (c.type == CONTAINER_AIRDROP && c.specialId == 0 && c.bandages == 0)
-		RemoveContainer(id);    // 비면 즉시 제거 (19.6)
+	// 에어드랍: 누군가 특수 총을 가져가면 즉시 제거(남은 붕대도 사라짐), 붕대만 가져가 비어도 제거 (22.4)
+	if (c.type == CONTAINER_AIRDROP && (item == ITEM_SPECIAL_WEAPON || (c.specialId == 0 && c.bandages == 0)))
+		RemoveContainer(id);
 }
 
 void BattleContent::CreateBag(GamePlayer* victim, uint32_t now)
@@ -1165,24 +1174,46 @@ void BattleContent::UpdateContainers(uint32_t now)
 		for (uint32_t id : expired) RemoveContainer(id);
 	}
 
-	// 에어드랍 회차
-	if (m_cfg.airdropIntervalMs > 0 && TimeDiff(now, m_nextAirdropAt) >= 0)
+	// 에어드랍 회차 (22.4)
+	if (m_airdropActive && m_cfg.airdropIntervalMs > 0 && TimeDiff(now, m_nextAirdropAt) >= 0)
 	{
 		while (TimeDiff(now, m_nextAirdropAt) >= 0) m_nextAirdropAt += (uint32_t)m_cfg.airdropIntervalMs;
-		TryAirdrop(now);
+		AirdropRound(now);
 	}
 }
 
-void BattleContent::TryAirdrop(uint32_t now)
+// 방 인원 기준 최대 개수 = min(airdrop_max, ceil(인원 / airdrop_players_per)), 최소 1
+int BattleContent::AirdropCap() const
+{
+	int n = (int)m_players.size();
+	int per = std::max(1, m_cfg.airdropPlayersPer);
+	int cap = std::max(1, (n + per - 1) / per);
+	return std::min(cap, m_cfg.airdropMax);
+}
+
+// 한 회차: 남은 자리(최대 - 현재) 중 1~남은 자리 무작위 개수 생성, 남은 자리가 없으면 건너뜀
+void BattleContent::AirdropRound(uint32_t now)
+{
+	int existing = 0;
+	for (auto& kv : m_containers)
+		if (kv.second.type == CONTAINER_AIRDROP) existing++;
+	int cap = AirdropCap();
+	int remain = cap - existing;
+	if (remain <= 0)
+	{
+		GameLog("[room %d] airdrop round skipped (%d / cap %d)", m_roomNo, existing, cap);
+		return;
+	}
+	int count = std::uniform_int_distribution<int>(1, remain)(m_rng);
+	for (int i = 0; i < count; i++)
+		if (!TryAirdrop(now)) break;
+}
+
+bool BattleContent::TryAirdrop(uint32_t now)
 {
 	std::vector<std::pair<int, int>> existing;
 	for (auto& kv : m_containers)
 		if (kv.second.type == CONTAINER_AIRDROP) existing.push_back({ kv.second.sx, kv.second.sy });
-	if ((int)existing.size() >= m_cfg.airdropMax)
-	{
-		GameLog("[room %d] airdrop skipped (already %d)", m_roomNo, (int)existing.size());
-		return;
-	}
 
 	const int N = MapConst::SectorCount;
 	std::vector<int> alive(N * N, 0);
@@ -1195,7 +1226,7 @@ void BattleContent::TryAirdrop(uint32_t now)
 			alive[y * N + x] = n;
 			total += n;
 		}
-	if (total == 0) return;
+	if (total == 0) return false;
 
 	// 3x3 묶음(가운데 섹터 기준) 중 생존 인원 최다. 기존 에어드랍과 체비셰프 거리 3 미만 제외
 	int best = -1;
@@ -1214,7 +1245,7 @@ void BattleContent::TryAirdrop(uint32_t now)
 			if (sum > best) { best = sum; cands.clear(); }
 			if (sum == best) cands.push_back(cy * N + cx);
 		}
-	if (cands.empty()) return;
+	if (cands.empty()) return false;
 	int pick = cands[std::uniform_int_distribution<int>(0, (int)cands.size() - 1)(m_rng)];
 	int csx = pick % N, csy = pick / N;
 
@@ -1247,6 +1278,7 @@ void BattleContent::TryAirdrop(uint32_t now)
 	SendAirdrop(hs, c, true);
 	GameLog("[room %d] airdrop %u at sector (%d,%d) pos (%.1f, %.1f), group alive %d, weapon %d",
 		m_roomNo, c.id, c.sx, c.sy, c.x, c.z, best, c.specialId);
+	return true;
 }
 
 void BattleContent::SendAirdrop(const std::vector<unsigned long long>& hs, const Container& c, bool isNew)

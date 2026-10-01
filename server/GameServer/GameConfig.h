@@ -42,12 +42,13 @@ struct GameConfig
 	float sprintMultiplier = 1.2f;     // Shift 달리기 속도 배율 (클라에 SC_ENTER_GAME으로 전달)
 
 	// v6 아이템·구르기·에어드랍·가방 (game-spec 19)
-	int airdropIntervalMs = 300000;
-	int airdropMax = 2;
+	int airdropIntervalMs = 120000;   // 회차 주기 (빈 방에 첫 입장 시 즉시 1회차 후 이 주기로)
+	int airdropMax = 4;               // 방당 최대 (인원 기준 상한의 상한)
+	int airdropPlayersPer = 30;       // 방 인원 N명당 1개 (올림, 최소 1)
 	int bagLifetimeMs = 60000;
 	int startBandages = 2;
 	int maxBandages = 5;
-	int bandageHeal = 50;
+	int bandageHeal = 30;
 	int bandageMs = 2000;
 	int rollMs = 250;
 	float rollSpeedMult = 3.0f;
@@ -134,6 +135,7 @@ private:
 		else if (k == "sprint_multiplier") sprintMultiplier = fl;
 		else if (k == "airdrop_interval_ms") airdropIntervalMs = n;
 		else if (k == "airdrop_max") airdropMax = n;
+		else if (k == "airdrop_players_per") airdropPlayersPer = n;
 		else if (k == "bag_lifetime_ms") bagLifetimeMs = n;
 		else if (k == "start_bandages") startBandages = n;
 		else if (k == "max_bandages") maxBandages = n;

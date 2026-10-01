@@ -130,6 +130,8 @@ class Bot {
   check(inv0 && inv0.equipped === 2 && inv0.special === 0 && inv0.bandages === 2, `SC_INVENTORY 초기 (권총, 특수 총 없음, 붕대 2) → ${inv0 && JSON.stringify(inv0)}`);
   const order = a.all.map(m => m.type).filter(t => [T.SC_WEAPON_DEFS, T.SC_INVENTORY].includes(t));
   check(order[0] === T.SC_WEAPON_DEFS && order[1] === T.SC_INVENTORY, '입장 순서: WEAPON_DEFS → INVENTORY');
+  const adImm = await a.wait(T.SC_AIRDROP, m => m.isNew === 1, 500);
+  check(adImm !== null, `빈 방에 첫 입장 → 에어드랍 즉시 생성 (IsNew=1)`);
 
   const b = new Bot('B'); await b.connect(); await b.enter('Bravo');
   await a.wait(T.SC_CREATE, m => m.list.some(x => x.id === b.id));
@@ -165,10 +167,10 @@ class Bot {
   const t0 = Date.now();
   const hpB = await b.wait(T.SC_HP, m => m.id === b.id, 3000);
   const took = Date.now() - t0;
-  check(hpB && hpB.hp === 100, `붕대 2초 사용 → HP 60+50 → 100 (SC_HP ${hpB && hpB.hp}, ${took}ms)`);
+  check(hpB && hpB.hp === 90, `붕대 2초 사용 → HP 60+30 → 90 (SC_HP ${hpB && hpB.hp}, ${took}ms)`);
   check(took >= 1800 && took <= 2600, `붕대 사용 시간 약 2초 (${took}ms)`);
   const hpA = await a.wait(T.SC_HP, m => m.id === b.id, 500);
-  check(hpA && hpA.hp === 100, '주변(A)도 SC_HP 수신');
+  check(hpA && hpA.hp === 90, '주변(A)도 SC_HP 수신');
   const invB = await b.wait(T.SC_INVENTORY, m => m.bandages === 1, 500);
   check(invB !== null, 'SC_INVENTORY 붕대 2 → 1');
 
@@ -238,15 +240,15 @@ class Bot {
   check((await a.wait(T.SC_C_DELETE, m => m.ids.includes(bagItem.id), 500)) === null, '빈 가방은 즉시 사라지지 않음');
 
   console.log('== 에어드랍');
-  const ad1 = await a.wait(T.SC_AIRDROP, m => m.isNew === 1, 4000);
-  check(ad1 !== null, `에어드랍 공지 SC_AIRDROP(IsNew=1) 섹터 (${ad1 && ad1.sx},${ad1 && ad1.sy})`);
+  const ad1 = adImm;
   check(ad1 && ad1.sx === Math.floor(ad1.x / 50) && ad1.sy === Math.floor(ad1.z / 50), '섹터 번호가 위치와 일치');
   const asx = Math.floor(a.x / 50), asy = Math.floor(a.z / 50);
   check(ad1 && Math.max(Math.abs(ad1.sx - asx), Math.abs(ad1.sy - asy)) <= 2, `첫 에어드랍은 인원이 있는 묶음 (A 섹터 ${asx},${asy})`);
-  check(c.all.some(m => m.type === T.SC_AIRDROP && m.id === ad1.id), '같은 방의 C도 에어드랍 수신 (방 전체)');
-  const ad2 = await a.wait(T.SC_AIRDROP, m => m.isNew === 1, 4000);
+  // test/item: 주기 3초, 인원 1명당 1개(airdrop_players_per 1), 최대 2 → 지금쯤 2개
+  const ad2 = await a.wait(T.SC_AIRDROP, m => m.isNew === 1 && m.id !== ad1.id, 4000);
   check(ad2 && Math.max(Math.abs(ad2.sx - ad1.sx), Math.abs(ad2.sy - ad1.sy)) >= 3, `두 번째 에어드랍은 다른 묶음 (${ad2 && ad2.sx},${ad2 && ad2.sy})`);
-  check((await a.wait(T.SC_AIRDROP, m => m.isNew === 1, 3500)) === null, '방에 2개 있으면 다음 회차 건너뜀');
+  check(c.all.some(m => m.type === T.SC_AIRDROP && m.id === ad2.id), '같은 방의 C도 에어드랍 수신 (방 전체)');
+  check((await a.wait(T.SC_AIRDROP, m => m.isNew === 1, 3500)) === null, '최대(2)에 도달하면 다음 회차 건너뜀');
   const d = new Bot('D'); await d.connect(); await d.enter('Delta');
   const dAd = d.all.filter(m => m.type === T.SC_AIRDROP && m.isNew === 0).map(m => m.id);
   check(dAd.includes(ad1.id) && dAd.includes(ad2.id), '입장 시 기존 에어드랍 2개를 IsNew=0으로 수신');
@@ -266,43 +268,40 @@ class Bot {
   const maxDur = special === 2 ? 80 : 50;
   check(ac && (special === 2 || special === 3) && ac.durability === maxDur && ac.bandages === 5, `에어드랍 내용물: 특수 총 ${special} (내구도 ${ac && ac.durability}), 붕대 5`);
   check(dc !== null, '여러 명이 동시에 열 수 있음 (D)');
-  a.send(new W(T.CS_TAKE).u32(ad1.id).u8(1));
-  d.send(new W(T.CS_TAKE).u32(ad1.id).u8(1));
-  const invA2 = await a.wait(T.SC_INVENTORY, m => m.special === special, 800);
-  check(invA2 && invA2.durability === maxDur && invA2.equipped === 2, `A 특수 총 획득 (장착은 권총 유지) ${invA2 && JSON.stringify(invA2)}`);
-  const dInv = await d.wait(T.SC_INVENTORY, m => m.special !== 0, 500);
-  check(dInv === null, '같은 특수 총은 먼저 도착한 요청(A)만 성공');
-  const dSeen = await d.wait(T.SC_CONTENTS, m => m.id === ad1.id && m.special === 0, 800);
-  check(dSeen !== null, '열어 둔 D에게 내용 갱신 (특수 총 없음)');
   a.send(new W(T.CS_TAKE).u32(ad1.id).u8(3));
   const invA3 = await a.wait(T.SC_INVENTORY, m => m.bandages === 5, 800);
   check(invA3 !== null, 'A 붕대 3 → 5 (최대 5, 2개만 가져감)');
   const left = await d.wait(T.SC_CONTENTS, m => m.id === ad1.id && m.bandages === 3, 800);
-  check(left !== null, '최대를 넘는 붕대 3개는 에어드랍에 남음');
-  d.send(new W(T.CS_TAKE).u32(ad1.id).u8(3));
+  check(left !== null, '열어 둔 D에게 내용 갱신: 최대를 넘는 붕대 3개는 남음');
+  d.send(new W(T.CS_TAKE).u32(ad1.id).u8(1));
+  const invD = await d.wait(T.SC_INVENTORY, m => m.special === special, 800);
+  check(invD && invD.durability === maxDur && invD.equipped === 2, `D 특수 총 획득 (장착은 권총 유지) ${invD && JSON.stringify(invD)}`);
+  a.send(new W(T.CS_TAKE).u32(ad1.id).u8(1));
+  check((await a.wait(T.SC_INVENTORY, m => m.special !== 0, 500)) === null, '늦게 온 요청(A)은 실패');
   const delA = await a.wait(T.SC_C_DELETE, m => m.ids.includes(ad1.id), 1000);
   const delC = await c.wait(T.SC_C_DELETE, m => m.ids.includes(ad1.id), 1000);
-  check(delA !== null && delC !== null, '에어드랍이 비면 즉시 제거 (방 전체 SC_CONTAINER_DELETE)');
+  check(delA !== null && delC !== null, '특수 총을 가져가면 붕대가 남아도 즉시 제거 (방 전체 SC_CONTAINER_DELETE)');
   const ad3 = await a.wait(T.SC_AIRDROP, m => m.isNew === 1, 4000);
   check(ad3 !== null, '제거 후 다음 회차에 새 에어드랍');
 
   console.log('== 특수 총 사용');
-  a.send(new W(T.CS_SWITCH).u8(1));
+  d.send(new W(T.CS_SWITCH).u8(1));
   await sleep(100);
-  const s1 = a.fire(special, d.x, d.z, 5);
-  const df = await d.wait(T.SC_FIRE, m => m.seq === s1.seq, 800);
+  a.drop(T.SC_FIRE);
+  const s1 = d.fire(special, a.x, a.z, 5);
+  const df = await a.wait(T.SC_FIRE, m => m.seq === s1.seq && m.shooter === d.id, 800);
   check(df && df.weapon === special, `1번 전환 후 특수 총(${special}) 사격`);
-  a.fire(1, d.x, d.z);
-  check((await d.wait(T.SC_FIRE, () => true, 500)) === null, '특수 총 장착 중 권총 사격 거부');
+  d.fire(1, a.x, a.z);
+  check((await a.wait(T.SC_FIRE, () => true, 500)) === null, '특수 총 장착 중 권총 사격 거부');
   if (special === 2) {
     await sleep(Math.min(1500, s1.dist / 100 * 1000) + 30);
-    for (let p = 0; p < 5; p++) a.hit(s1, d, p);
-    let total = 0; for (let p = 0; p < 5; p++) { const dm = await d.wait(T.SC_DAMAGE, m => m.seq === s1.seq, 500); if (dm) total += dm.dmg; }
+    for (let p = 0; p < 5; p++) d.hit(s1, a, p);
+    let total = 0; for (let p = 0; p < 5; p++) { const dm = await a.wait(T.SC_DAMAGE, m => m.seq === s1.seq, 500); if (dm) total += dm.dmg; }
     check(total === 100, `샷건 산탄 5발 명중 → 20 x 5 = ${total}`);
   } else {
     await sleep(Math.min(1500, s1.dist / 200 * 1000) + 30);
-    a.hit(s1, d, 0);
-    const dm = await d.wait(T.SC_DAMAGE, m => m.seq === s1.seq, 800);
+    d.hit(s1, a, 0);
+    const dm = await a.wait(T.SC_DAMAGE, m => m.seq === s1.seq, 800);
     check(dm && dm.dmg === 60, `저격총 명중 → 60`);
   }
 

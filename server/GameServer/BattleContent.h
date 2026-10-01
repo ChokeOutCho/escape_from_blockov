@@ -84,7 +84,9 @@ private:
 	void SendHp(GamePlayer* p);                                     // 3x3
 	float FireTokenCap(const WeaponDef* w) const;
 	void CreateBag(GamePlayer* victim, uint32_t now);
-	void TryAirdrop(uint32_t now);
+	bool TryAirdrop(uint32_t now);
+	void AirdropRound(uint32_t now);
+	int AirdropCap() const;
 	void RemoveContainer(uint32_t id);
 	void SendContents(GamePlayer* to, const Container& c);
 	void BroadcastContents(const Container& c);
@@ -129,6 +131,7 @@ private:
 	std::vector<std::vector<uint32_t>> m_bagCells;     // 섹터별 가방 id (시야 계산)
 	uint32_t m_nextContainerId = 1;
 	uint32_t m_nextAirdropAt = 0;
+	bool m_airdropActive = false;
 	uint32_t m_lastContainerCheck = 0;
 
 	std::vector<PendingDisconnect> m_pending;
