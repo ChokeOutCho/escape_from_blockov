@@ -38,7 +38,7 @@ namespace Blockov.Net
             int size = Mathf.RoundToInt(fontSize * Mathf.Clamp(Screen.height / 1080f, 0.6f, 2f));
             if (_style == null || _style.fontSize != size)
             {
-                _style = new GUIStyle(GUI.skin.label) { font = Blockov.Game.UiKit.Font, fontSize = size, fontStyle = FontStyle.Bold, richText = true };
+                _style = new GUIStyle(GUI.skin.label) { font = Blockov.Game.UiKit.Font, fontSize = size, fontStyle = FontStyle.Bold, richText = true, clipping = TextClipping.Overflow };
                 _shadow = new GUIStyle(_style) { richText = false };
                 _shadow.normal.textColor = new Color(0, 0, 0, 0.8f);
             }

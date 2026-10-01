@@ -204,6 +204,7 @@ namespace Blockov.Game
         public const byte SlotSpecial = 1, SlotPistol = 2, SlotBandage = 3;
         public const int MaxBandages = 5;
         public const float BandageSeconds = 2f;
+        public const int BandageHeal = 30;            // 서버 bandage_heal (22.3)
         public const float BandageMoveMult = 0.5f;     // 붕대 사용 중 걷기 속도 배율 (21.4)
         public const float RollSeconds = 0.25f, RollSpeedMult = 3f, RollCooldown = 3f;
         public const float InteractRange = 2.5f, LootCloseRange = 3f;

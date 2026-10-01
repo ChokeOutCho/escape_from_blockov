@@ -49,12 +49,13 @@ namespace Blockov.Game
             if (key == _styleScaleKey && _label != null) return;
             _styleScaleKey = key;
 
-            _label = new GUIStyle(GUI.skin.label) { font = Font, fontSize = Px(20), richText = true, wordWrap = false };
+            // 한글 폰트 줄 높이(글자 크기 x 약 1.45)가 라벨 사각형보다 커도 잘리지 않게 (game-spec 22.5)
+            _label = new GUIStyle(GUI.skin.label) { font = Font, fontSize = Px(20), richText = true, wordWrap = false, clipping = TextClipping.Overflow, padding = new RectOffset(2, 2, 0, 0) };
             _label.normal.textColor = Color.white;
             _labelCenter = new GUIStyle(_label) { alignment = TextAnchor.MiddleCenter };
             _labelRight = new GUIStyle(_label) { alignment = TextAnchor.MiddleRight };
             _title = new GUIStyle(_labelCenter) { fontSize = Px(56), fontStyle = FontStyle.Bold };
-            _button = new GUIStyle(GUI.skin.button) { font = Font, fontSize = Px(24) };
+            _button = new GUIStyle(GUI.skin.button) { font = Font, fontSize = Px(24), clipping = TextClipping.Overflow };
             _field = new GUIStyle(GUI.skin.textField) { font = Font, fontSize = Px(24), alignment = TextAnchor.MiddleLeft, padding = new RectOffset(Px(10), Px(10), 0, 0) };
             _box = new GUIStyle(GUI.skin.box);
         }

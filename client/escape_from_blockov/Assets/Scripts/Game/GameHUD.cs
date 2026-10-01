@@ -179,7 +179,7 @@ namespace Blockov.Game
             float a = Mathf.Clamp01((6f - age) / 0.6f);
             float w = UiKit.Px(460), h = UiKit.Px(46);
             var r = new Rect((Screen.width - w) * 0.5f, UiKit.Px(54), w, h);
-            UiKit.Rect(r, new Color(0.1f, 0.25f, 0.6f, 0.75f * a));
+            UiKit.Rect(r, new Color(0.55f, 0.25f, 0.02f, 0.78f * a));
             UiKit.Rect(new Rect(r.x, r.yMax - UiKit.Px(3), r.width, UiKit.Px(3)), new Color(1f, 0.85f, 0.2f, a));
             UiKit.ShadowLabel(r, $"<b>{cm.LastNotice.Text}</b>", UiKit.Sized(UiKit.LabelCenter, 22), new Color(1f, 0.95f, 0.7f, a));
         }
@@ -224,7 +224,7 @@ namespace Blockov.Game
                 string title, detail;
                 if (slot == 1) { title = sid == 0 ? "특수 총" : GameSession.WeaponName(sid); detail = specialSub; }
                 else if (slot == 2) { title = GameSession.WeaponName(GameSession.PistolWeaponId); detail = "무한"; }
-                else { title = $"붕대  x{GameSession.Bandages}"; detail = bandage >= 0 ? $"사용 중 {(1f - bandage) * GameSession.BandageSeconds:0.0}s" : "+50 HP · 2초"; }
+                else { title = $"붕대  x{GameSession.Bandages}"; detail = bandage >= 0 ? $"사용 중 {(1f - bandage) * GameSession.BandageSeconds:0.0}s" : $"+{GameSession.BandageHeal} HP · 2초"; }
                 var col = empty ? new Color(0.6f, 0.6f, 0.6f) : Color.white;
                 UiKit.ShadowLabel(new Rect(r.x, r.y + UiKit.Px(8), r.width, UiKit.Px(26)), title, name, col);
                 UiKit.ShadowLabel(new Rect(r.x, r.y + UiKit.Px(36), r.width, UiKit.Px(20)), detail, sub, new Color(0.85f, 0.85f, 0.85f));
@@ -404,7 +404,7 @@ namespace Blockov.Game
             var r = new Rect(Screen.width * 0.5f + UiKit.Px(80), Screen.height * 0.5f - h * 0.5f, w, h);
             s_lootRect = r;
             UiKit.Panel(r, 0.82f);
-            Border(r, UiKit.Px(2), info.Type == ContainerManager.TypeAirdrop ? new Color(0.35f, 0.6f, 1f) : new Color(0.7f, 0.5f, 0.3f));
+            Border(r, UiKit.Px(2), info.Type == ContainerManager.TypeAirdrop ? new Color(1f, 0.55f, 0.1f) : new Color(0.7f, 0.5f, 0.3f));
             string title = info.Type == ContainerManager.TypeAirdrop ? $"에어드랍  <color=#aaaaaa>{GameSession.RegionLabel(info.SectorX, info.SectorY)}</color>" : "가방";
             GUI.Label(new Rect(r.x + UiKit.Px(14), r.y + UiKit.Px(8), w, UiKit.Px(30)), $"<b>{title}</b>", UiKit.Sized(UiKit.Label, 20));
             if (GUI.Button(new Rect(r.xMax - UiKit.Px(40), r.y + UiKit.Px(8), UiKit.Px(30), UiKit.Px(28)), "X", UiKit.Sized(UiKit.Button, 16)))
@@ -527,7 +527,7 @@ namespace Blockov.Game
             _mapRect = r;
             UiKit.Rect(new Rect(r.x - band - 6, r.y - band - UiKit.Px(36), r.width + band * 2 + 12, r.height + band * 2 + UiKit.Px(42)), new Color(0, 0, 0, 0.8f));
             GUI.Label(new Rect(r.x - band, r.y - band - UiKit.Px(34), r.width + band * 2, UiKit.Px(28)),
-                $"<b>전체 맵</b>  <color=#aaaaaa>(M/Esc 닫기 · 휠 줌 x{_mapZoom:0.0} · 드래그 이동 · 구역 1칸 {SectorGrid.DefaultSectorSize * GameSession.RegionSectors}m · 파랑 에어드랍)</color>", UiKit.Sized(UiKit.Label, 16));
+                $"<b>전체 맵</b>  <color=#aaaaaa>(M/Esc 닫기 · 휠 줌 x{_mapZoom:0.0} · 드래그 이동 · 구역 1칸 {SectorGrid.DefaultSectorSize * GameSession.RegionSectors}m · 주황 에어드랍)</color>", UiKit.Sized(UiKit.Label, 16));
 
             float v = MapViewSize;
             float minX = _mapCenter.x - v * 0.5f, minZ = _mapCenter.y - v * 0.5f;
@@ -597,8 +597,8 @@ namespace Blockov.Game
                     if (!Visible(sp)) continue;
                     var p = L(sp);
                     float s = UiKit.Px(12);
-                    UiKit.Rect(new Rect(p.x - s / 2 - 2, p.y - s / 2 - 2, s + 4, s + 4), new Color(1f, 0.85f, 0.2f, blink));
-                    UiKit.Rect(new Rect(p.x - s / 2, p.y - s / 2, s, s), new Color(0.2f, 0.45f, 0.95f));
+                    UiKit.Rect(new Rect(p.x - s / 2 - 2, p.y - s / 2 - 2, s + 4, s + 4), new Color(1f, 1f, 1f, blink));
+                    UiKit.Rect(new Rect(p.x - s / 2, p.y - s / 2, s, s), new Color(1f, 0.5f, 0.08f));
                     UiKit.ShadowLabel(new Rect(p.x + s, p.y - UiKit.Px(10), UiKit.Px(160), UiKit.Px(20)), $"에어드랍 {GameSession.RegionLabel(ad.SectorX, ad.SectorY)}", lab, new Color(1f, 0.9f, 0.5f));
                 }
             }

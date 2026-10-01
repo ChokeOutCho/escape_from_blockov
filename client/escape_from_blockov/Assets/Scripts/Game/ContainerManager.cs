@@ -161,7 +161,7 @@ namespace Blockov.Game
             }
             else
             {
-                var crate = new Color(0.2f, 0.45f, 0.95f);
+                var crate = new Color(1f, 0.5f, 0.08f);       // 에어드랍 = 주황 (22.4)
                 Part(PrimitiveType.Cube, new Vector3(0, 0.7f, 0), new Vector3(1.6f, 1.4f, 1.6f), crate);
                 Part(PrimitiveType.Cube, new Vector3(0, 0.7f, 0), new Vector3(1.65f, 0.25f, 1.65f), new Color(1f, 0.85f, 0.2f));
                 // 멀리서도 보이는 신호 기둥
