@@ -7,9 +7,9 @@ using UnityEngine.InputSystem;
 namespace Blockov.Game
 {
     /// <summary>
-    /// 로컬 플레이어 조작 (game-spec 4, 11.2, 19): 클라 권위 이동(예측) + 서버 검증.
+    /// 로컬 플레이어 조작 (game-spec 4, 12.2, 6): 클라 권위 이동(예측) + 서버 검증.
     ///  - WASD 8방향(정규화), Shift 누르는 동안 달리기(속도 x SprintMultiplier), 마우스 조준(지면 y=0), 좌클릭 사격(누르고 있으면 연사)
-    ///  - 1/2 무기 전환(1 특수 총, 2 권총), 3 붕대(2초), Space 구르기(마우스 방향, 이동속도 x3, 0.25초, 쿨 3초)
+    ///  - 1/2 무기 전환(1 특수 무기, 2 권총), 3 붕대(2초), Space 구르기(마우스 방향, 이동속도 x3, 0.25초, 쿨 3초)
     ///  - 조준선: 캐릭터 → 마우스 지면 (사거리 밖 구간은 어둡게)
     ///  - CS_MOVE: 이동 중이거나 조준 5° 이상 변화 → 100ms마다, 속도 변화 → 즉시(최소 50ms 간격). 구르는 동안은 보내지 않음
     ///  - CS_FIRE: 흔들림(±JitterDeg) 적용 후 방향 + ViewTimeMs + SpreadSeed, 로컬 탄 생성
@@ -331,7 +331,7 @@ namespace Blockov.Game
             for (byte i = 0; i < w.Pellets; i++)
                 Projectile.Spawn(GameSession.MyPlayerId, _shotSeq, i, true, _pos, GameSession.PelletDir(dir, seed, i, w.SpreadDeg), w);
 
-            // 특수 총 내구도 (서버와 같은 규칙: 0이 되면 사라지고 권총으로)
+            // 특수 무기 내구도 (서버와 같은 규칙: 0이 되면 사라지고 권총으로)
             if (GameSession.Equipped == GameSession.SlotSpecial && w.Durability > 0)
             {
                 if (GameSession.SpecialDurability > 0) GameSession.SpecialDurability--;
@@ -348,7 +348,7 @@ namespace Blockov.Game
         ////////////////////////////////////////////////////////////////
         // 조준선
         ////////////////////////////////////////////////////////////////
-        /// <summary>조준선 길이 (game-spec 20.2): 마우스와 무관하게 고정, 벽(Wall)에서 끊김</summary>
+        /// <summary>조준선 길이 (game-spec 4.3): 마우스와 무관하게 고정, 벽(Wall)에서 끊김</summary>
         public const float AimLineLength = 20f;
 
         void UpdateAimLine(bool hasGround, Vector3 ground, Vector2 aimDir)

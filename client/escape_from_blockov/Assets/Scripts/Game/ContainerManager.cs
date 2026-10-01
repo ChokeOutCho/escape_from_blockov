@@ -8,7 +8,7 @@ using UnityEngine.InputSystem;
 namespace Blockov.Game
 {
     /// <summary>
-    /// 가방·에어드랍 (game-spec 19.5~19.7).
+    /// 가방·에어드랍 (game-spec 6.3~6.5).
     ///  - SC_CONTAINER_CREATE/DELETE: 시야(3x3) 안 가방, 에어드랍 제거
     ///  - SC_AIRDROP: 방 전체 에어드랍 (IsNew=1이면 상단 공지)
     ///  - F 상호작용: 2.5m 이내 가장 가까운 대상 → F를 누르는 동안 원형 게이지(가방 1초 / 에어드랍 2초), 이동 입력·F 떼기로 취소

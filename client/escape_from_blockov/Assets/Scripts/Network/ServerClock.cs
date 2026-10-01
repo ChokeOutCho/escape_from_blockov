@@ -3,7 +3,7 @@ using System;
 namespace Blockov.Net
 {
     /// <summary>
-    /// 서버 시각 추정 (game-spec 8.2).
+    /// 서버 시각 추정 (game-spec 9.2).
     ///  - SC_PONG마다 rtt = now - ClientTimeMs, offsetSample = ServerTimeMs + rtt/2 - now
     ///  - 최근 8개 중 RTT가 가장 작은 샘플의 offset을 목표로 삼고, 초당 50ms 이내로 완만히 보정
     ///  - EstServerNow = localNow + offset,  ViewTimeMs = EstServerNow - InterpDelay

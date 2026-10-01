@@ -5,7 +5,7 @@ using UnityEngine;
 namespace Blockov.Game
 {
     /// <summary>
-    /// 로컬 탄 피격 보고 버퍼 (game-spec 6.2, 7.3 CS_HIT_REPORT).
+    /// 로컬 탄 피격 보고 버퍼 (game-spec 7.2, 8.3 CS_HIT_REPORT).
     /// 첫 항목 후 100ms가 지나거나 29건(512B 한도)이 차면 한 패킷으로 보낸다.
     /// </summary>
     public sealed class HitReporter

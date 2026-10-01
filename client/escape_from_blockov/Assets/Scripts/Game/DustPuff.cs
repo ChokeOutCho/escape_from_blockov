@@ -2,7 +2,7 @@ using UnityEngine;
 
 namespace Blockov.Game
 {
-    /// <summary>구르기 먼지 잔상 (game-spec 20.1): 회색 구가 0.5초 동안 커졌다가 작아지며 사라진다</summary>
+    /// <summary>구르기 먼지 잔상 (game-spec 4.2): 회색 구가 0.5초 동안 커졌다가 작아지며 사라진다</summary>
     public sealed class DustPuff : MonoBehaviour
     {
         static readonly Color DustColor = new Color(0.62f, 0.58f, 0.5f);

@@ -4,9 +4,9 @@ using UnityEngine;
 namespace Blockov.Game
 {
     /// <summary>
-    /// 전투 HUD (IMGUI, game-spec 11.2, 19.8):
+    /// 전투 HUD (IMGUI, game-spec 12.2, 12.3):
     ///  좌상단 RTT(LatencyHUD) + 킬 피드 / 우상단 TOP 3 / 상단 가운데 접속 인원·에어드랍 공지 / 좌하단 HP·점수·킬
-    ///  하단 가운데 슬롯 바(1 특수 총 · 2 권총 · 3 붕대)·붕대 게이지 / 우하단 조작법(키보드·마우스 그림, 누르는 동안 반투명)
+    ///  하단 가운데 슬롯 바(1 특수 무기 · 2 권총 · 3 붕대)·붕대 게이지 / 우하단 조작법(키보드·마우스 그림, 누르는 동안 반투명)
     ///  F 상호작용 문구·원형 게이지, 루팅 창 / 캐릭터 머리 위 이름·HP / 히트 마커 / 전체 맵(M) / 사망 결과창
     /// </summary>
     public sealed class GameHUD : MonoBehaviour
@@ -222,7 +222,7 @@ namespace Blockov.Game
                 if (selected) Border(r, UiKit.Px(2), new Color(1f, 0.85f, 0.25f));
                 GUI.Label(new Rect(r.x + UiKit.Px(6), r.y + UiKit.Px(2), UiKit.Px(20), UiKit.Px(18)), $"<color=#bbbbbb>{slot}</color>", small);
                 string title, detail;
-                if (slot == 1) { title = sid == 0 ? "특수 총" : GameSession.WeaponName(sid); detail = specialSub; }
+                if (slot == 1) { title = sid == 0 ? "특수 무기" : GameSession.WeaponName(sid); detail = specialSub; }
                 else if (slot == 2) { title = GameSession.WeaponName(GameSession.PistolWeaponId); detail = "무한"; }
                 else { title = $"붕대  x{GameSession.Bandages}"; detail = bandage >= 0 ? $"사용 중 {(1f - bandage) * GameSession.BandageSeconds:0.0}s" : $"+{GameSession.BandageHeal} HP · 2초"; }
                 var col = empty ? new Color(0.6f, 0.6f, 0.6f) : Color.white;
@@ -317,7 +317,7 @@ namespace Blockov.Game
             Key(new Rect(x2, y, k, k), "1", k1);
             Key(new Rect(x2 + k + g, y, k, k), "2", k2);
             Key(new Rect(x2 + (k + g) * 2, y, k, k), "3", k3);
-            Caption(new Rect(x2, y + k + 1, k * 3 + g * 2, UiKit.Px(14)), "특수총·권총·붕대", cap);
+            Caption(new Rect(x2, y + k + 1, k * 3 + g * 2, UiKit.Px(14)), "특수무기·권총·붕대", cap);
             float y2 = y + k + g + UiKit.Px(14);
             Key(new Rect(x2, y2, k, k), "F", f);
             Caption(new Rect(x2 - UiKit.Px(6), y2 + k + 1, k + UiKit.Px(12), UiKit.Px(14)), "열기", cap);
@@ -414,11 +414,11 @@ namespace Blockov.Game
             var btn = UiKit.Sized(UiKit.Button, 17);
             float y = r.y + UiKit.Px(50), rowH = UiKit.Px(52);
 
-            // 특수 총
+            // 특수 무기
             var row1 = new Rect(r.x + UiKit.Px(12), y, w - UiKit.Px(24), rowH - UiKit.Px(6));
             UiKit.Rect(row1, new Color(1, 1, 1, 0.06f));
             string gun;
-            if (c.SpecialWeaponId == 0) gun = "<color=#888888>특수 총 없음</color>";
+            if (c.SpecialWeaponId == 0) gun = "<color=#888888>특수 무기 없음</color>";
             else
             {
                 GameSession.Weapons.TryGetValue(c.SpecialWeaponId, out var wd);
@@ -442,7 +442,7 @@ namespace Blockov.Game
             GUI.enabled = true;
 
             var hint = UiKit.Sized(UiKit.LabelCenter, 12);
-            Caption(new Rect(r.x, r.yMax - UiKit.Px(24), w, UiKit.Px(18)), "특수 총은 덮어씁니다 · 붕대는 최대 5개 · F/Esc 닫기 · 3m 벗어나면 닫힘", hint);
+            Caption(new Rect(r.x, r.yMax - UiKit.Px(24), w, UiKit.Px(18)), "특수 무기은 덮어씁니다 · 붕대는 최대 5개 · F/Esc 닫기 · 3m 벗어나면 닫힘", hint);
         }
 
         ////////////////////////////////////////////////////////////////

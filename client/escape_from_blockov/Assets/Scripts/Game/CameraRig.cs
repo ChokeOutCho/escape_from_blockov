@@ -5,14 +5,14 @@ namespace Blockov.Game
     /// <summary>
     /// 2.5D 사선 시점 카메라 (정사영). 대상(로컬 플레이어)을 따라간다.
     /// 보이는 반경 = orthographicSize(화면 세로 절반). [ ] 키로 minZoom ~ CameraViewHalfExtent 사이 조절.
-    /// game-spec 3.1: CameraViewHalfExtent = 200 (디버그 설정).
+    /// game-spec 3.2: CameraViewHalfExtent = 200 (디버그 설정).
     /// </summary>
     [RequireComponent(typeof(Camera))]
     public sealed class CameraRig : MonoBehaviour
     {
         public Transform Target;
 
-        [Tooltip("최대 보이는 반경 (game-spec 3.1, 디버그 200)")]
+        [Tooltip("최대 보이는 반경 (game-spec 3.2, 디버그 200)")]
         public float CameraViewHalfExtent = 200f;
         public float MinZoom = 15f;
         public float Zoom = 25f;
@@ -42,7 +42,7 @@ namespace Blockov.Game
         void LateUpdate()
         {
 #if ENABLE_INPUT_SYSTEM
-            // 줌: [ 줌인 / ] 줌아웃, 누르는 동안 연속 (game-spec 20.3). 마우스 휠은 전체 맵 줌 전용
+            // 줌: [ 줌인 / ] 줌아웃, 누르는 동안 연속 (game-spec 3.5). 마우스 휠은 전체 맵 줌 전용
             var kb = UnityEngine.InputSystem.Keyboard.current;
             if (kb != null)
             {

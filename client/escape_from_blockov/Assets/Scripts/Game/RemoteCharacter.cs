@@ -5,7 +5,7 @@ using UnityEngine;
 namespace Blockov.Game
 {
     /// <summary>
-    /// 원격 캐릭터 (game-spec 11.2): 스냅샷(수신 시 EstServerNow 기준 시각)을 버퍼에 쌓고
+    /// 원격 캐릭터 (game-spec 12.2): 스냅샷(수신 시 EstServerNow 기준 시각)을 버퍼에 쌓고
     /// 렌더 시각 EstServerNow - 100ms로 보간한다. 스냅샷이 부족하면 속도로 최대 200ms 외삽.
     /// 화면에 그려진 위치 = 서버 시각 (EstServerNow - InterpDelay) 의 위치 → CS_FIRE의 ViewTime과 일치.
     /// </summary>

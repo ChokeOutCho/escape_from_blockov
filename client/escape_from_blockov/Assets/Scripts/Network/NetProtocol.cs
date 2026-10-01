@@ -27,10 +27,10 @@ namespace Blockov.Net
         CS_PING = 3004,
         CS_HEARTBEAT = 3005,
         CS_ROLL = 3006,             // float StartX, StartZ, DirX, DirZ
-        CS_SWITCH_WEAPON = 3007,    // BYTE Slot (1 특수 총, 2 권총)
+        CS_SWITCH_WEAPON = 3007,    // BYTE Slot (1 특수 무기, 2 권총)
         CS_USE_BANDAGE = 3008,
         CS_OPEN_CONTAINER = 3009,   // UINT32 ContainerId
-        CS_TAKE_ITEM = 3010,        // UINT32 ContainerId, BYTE Item (1 특수 총, 3 붕대)
+        CS_TAKE_ITEM = 3010,        // UINT32 ContainerId, BYTE Item (1 특수 무기, 3 붕대)
 
         // S -> C
         SC_ENTER_GAME = 3100,

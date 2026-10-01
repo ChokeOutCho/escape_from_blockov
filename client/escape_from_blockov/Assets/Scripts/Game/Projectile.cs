@@ -4,7 +4,7 @@ using UnityEngine;
 namespace Blockov.Game
 {
     /// <summary>
-    /// 투사체 (game-spec 6.2).
+    /// 투사체 (game-spec 7.2).
     ///  - 로컬 탄(내가 쏜 탄): 매 프레임 이동 + 원격 캐릭터(화면에 그려진 위치)와 원-선분 충돌 → HitReporter에 보고, 히트 마커(예측)
     ///  - 관찰자 탄(SC_FIRE): 이동·연출만. 사거리 도달 또는 해당 ShotSeq의 SC_DAMAGE 수신 시 제거
     /// </summary>

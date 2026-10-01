@@ -6,7 +6,7 @@ using UnityEngine.SceneManagement;
 namespace Blockov.Game
 {
     /// <summary>
-    /// TestArena 씬의 게임 진행 (game-spec 6, 11.2).
+    /// TestArena 씬의 게임 진행 (game-spec 7, 12.2).
     /// 서버 패킷을 받아 로컬/원격 캐릭터, 투사체, 점수·랭킹·사망을 처리한다.
     /// 씬에 GameController 오브젝트 하나만 두면 카메라·HUD는 런타임에 구성된다.
     /// </summary>
@@ -253,7 +253,7 @@ namespace Blockov.Game
                 _observerShots.Add(Projectile.Spawn(shooter, seq, i, false, new Vector2(ox, oz), GameSession.PelletDir(dir, seed, i, w.SpreadDeg), w));
         }
 
-        // 원격 구르기: 시작 → 도착(0.25초) 스냅샷 (game-spec 19.3)
+        // 원격 구르기: 시작 → 도착(0.25초) 스냅샷 (game-spec 4.2)
         void OnRoll(PacketReader r)
         {
             uint id = r.ReadUInt32();

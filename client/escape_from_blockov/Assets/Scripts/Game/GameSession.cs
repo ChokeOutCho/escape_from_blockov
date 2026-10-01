@@ -19,9 +19,9 @@ namespace Blockov.Game
         public byte Pierce;
         /// <summary>발사 방향 무작위 흔들림 ±JitterDeg (v6)</summary>
         public float JitterDeg;
-        /// <summary>특수 총 최대 내구도(발사 횟수). 0 = 무한</summary>
+        /// <summary>특수 무기 최대 내구도(발사 횟수). 0 = 무한</summary>
         public ushort Durability;
-        /// <summary>1 특수 총, 2 기본 총</summary>
+        /// <summary>1 특수 무기, 2 기본 무기</summary>
         public byte Slot;
         public string Name;
     }
@@ -142,7 +142,7 @@ namespace Blockov.Game
         public static WeaponDef MyWeapon => Weapons.TryGetValue(WeaponId, out var w) ? w : null;
 
         ////////////////////////////////////////////////////////////////
-        // 지도 좌표 (game-spec 20.4): 열 A..Z, AA..AD (sx), 행 1..30 (위쪽 = 북 = z 큰 쪽이 1)
+        // 지도 좌표 (game-spec 3.4): 열 A..Z, AA..AD (sx), 행 1..30 (위쪽 = 북 = z 큰 쪽이 1)
         ////////////////////////////////////////////////////////////////
         public static int SectorCount => SectorGrid.DefaultSectorCount;
 
@@ -166,7 +166,7 @@ namespace Blockov.Game
         }
 
         ////////////////////////////////////////////////////////////////
-        // 구역 번호 (game-spec 21.2): 섹터 3x3 = 1구역, 10x10 = 1~100, 왼쪽 위(북서) 1부터 오른쪽으로, 행 단위로 아래로
+        // 구역 번호 (game-spec 3.4): 섹터 3x3 = 1구역, 10x10 = 1~100, 왼쪽 위(북서) 1부터 오른쪽으로, 행 단위로 아래로
         ////////////////////////////////////////////////////////////////
         public const int RegionSectors = 3;
         public static int RegionCount => (SectorCount + RegionSectors - 1) / RegionSectors;
@@ -199,7 +199,7 @@ namespace Blockov.Game
         }
 
         ////////////////////////////////////////////////////////////////
-        // v6 인벤토리 (SC_INVENTORY, game-spec 19.1)
+        // v6 인벤토리 (SC_INVENTORY, game-spec 6.1)
         ////////////////////////////////////////////////////////////////
         public const byte SlotSpecial = 1, SlotPistol = 2, SlotBandage = 3;
         public const int MaxBandages = 5;
@@ -226,7 +226,7 @@ namespace Blockov.Game
             WeaponId = Equipped == SlotSpecial ? SpecialWeaponId : PistolWeaponId;
         }
 
-        /// <summary>산탄 i의 [0,1) 난수 (시드 공유 → 사수·관찰자 같은 각도, game-spec 19.2)</summary>
+        /// <summary>산탄 i의 [0,1) 난수 (시드 공유 → 사수·관찰자 같은 각도, game-spec 5.3)</summary>
         public static float PelletRand(byte seed, int i)
         {
             uint h = (uint)(seed + 1) * 73856093u ^ (uint)(i + 1) * 19349663u;

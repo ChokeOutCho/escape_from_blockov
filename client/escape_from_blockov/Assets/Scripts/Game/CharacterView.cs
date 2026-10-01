@@ -82,7 +82,7 @@ namespace Blockov.Game
             transform.position = new Vector3(x, 0, z);
         }
 
-        /// <summary>구르기 연출 (game-spec 20.1): delay초 뒤부터 0.25초 동안 dir 방향 앞구르기 + 먼지 잔상</summary>
+        /// <summary>구르기 연출 (game-spec 4.2): delay초 뒤부터 0.25초 동안 dir 방향 앞구르기 + 먼지 잔상</summary>
         public void PlayRoll(Vector2 dir, float delay = 0f)
         {
             if (dir.sqrMagnitude < 1e-4f) return;
