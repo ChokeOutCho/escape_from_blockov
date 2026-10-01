@@ -939,13 +939,12 @@ void BattleContent::OnRelease(unsigned long long sessionHandle, SESSION_LEAVE_CO
 	m_playerCount.store((int)m_players.size());
 	s_online.fetch_sub(1);
 	m_reserved.fetch_sub(1);
-	GameLog("[room %d] player %u left (code %d, score %u)", m_roomNo, p->playerId, (int)code, p->score);
 	delete p;
 	if (m_players.empty()) m_airdropActive = false;    // 방이 비면 타이머 정지 (남은 에어드랍은 유지)
 }
 
 ////////////////////////////////////////////////////////////////////////
-// v6: 구르기 · 무기 전환 · 붕대 · 가방 · 에어드랍 (game-spec 19)
+// v6: 구르기 · 무기 전환 · 붕대 · 가방 · 에어드랍 (game-spec 6)
 ////////////////////////////////////////////////////////////////////////
 float BattleContent::FireTokenCap(const WeaponDef* w) const
 {

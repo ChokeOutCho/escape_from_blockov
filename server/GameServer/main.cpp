@@ -35,8 +35,35 @@ static void ConsoleHome()
 #endif
 }
 
+#ifndef GAME_STUB_NETLIB
+// 실행 파일을 x64\Release에서 직접 실행한 경우: 작업 폴더에 game_config.txt가 없으면 실행 파일 위쪽 폴더(server/GameServer)로 이동
+// (설정·무기표·스폰·엄폐물 맵 경로가 모두 server/GameServer 기준 상대 경로이기 때문)
+static void FixWorkingDirectory()
+{
+	if (GetFileAttributesA("game_config.txt") != INVALID_FILE_ATTRIBUTES) return;
+	char exe[MAX_PATH];
+	DWORD n = GetModuleFileNameA(nullptr, exe, MAX_PATH);
+	if (n == 0 || n >= MAX_PATH) return;
+	std::string dir(exe, n);
+	dir = dir.substr(0, dir.find_last_of("\\/"));
+	for (const char* up : { "", "\\..", "\\..\\.." })
+	{
+		std::string d = dir + up;
+		if (GetFileAttributesA((d + "\\game_config.txt").c_str()) != INVALID_FILE_ATTRIBUTES)
+		{
+			SetCurrentDirectoryA(d.c_str());
+			printf("working directory -> %s\n", d.c_str());
+			return;
+		}
+	}
+}
+#endif
+
 int main()
 {
+#ifndef GAME_STUB_NETLIB
+	FixWorkingDirectory();
+#endif
 	GameConfig cfg;
 	if (!cfg.Load("game_config.txt"))
 		printf("game_config.txt not found. using defaults\n");

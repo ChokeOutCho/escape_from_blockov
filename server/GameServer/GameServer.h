@@ -1,6 +1,6 @@
 #pragma once
 ////////////////////////////////////////////////////////////////////////
-// 게임 서버 (game-spec 9.1). EntryContent 1개 + BattleContent N개를 생성·등록.
+// 게임 서버 (game-spec 10.1). EntryContent 1개 + BattleContent N개를 생성·등록.
 // 자체 암호화는 사용하지 않는다(opt_encryption = nullptr).
 ////////////////////////////////////////////////////////////////////////
 #include <vector>

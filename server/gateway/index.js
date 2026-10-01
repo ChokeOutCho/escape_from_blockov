@@ -1,4 +1,4 @@
-// escape_from_blockov WS <-> TCP gateway (game-spec 13.1, 1단계 전용)
+// escape_from_blockov WS <-> TCP gateway (game-spec 14.1, 1단계 전용)
 // - 외부 패키지 없음 (Node.js 18+ 내장 모듈만 사용). 실행: node index.js
 // - WebSocket 연결 1개 <-> 게임 서버 TCP 연결 1개
 // - 바이트를 해석하지 않고 그대로 중계 (클라 -> 서버: WS 메시지 페이로드 그대로, 서버 -> 클라: TCP 청크 = WS 메시지 1개)

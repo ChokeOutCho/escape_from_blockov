@@ -92,7 +92,7 @@ enum en_KICK_REASON : uint8_t
 	KICK_SERVER_SHUTDOWN = 4,
 };
 
-// v6 아이템 슬롯 / 컨테이너 (game-spec 19)
+// v6 아이템 슬롯 / 컨테이너 (game-spec 6)
 enum en_SLOT : uint8_t
 {
 	SLOT_SPECIAL = 1,

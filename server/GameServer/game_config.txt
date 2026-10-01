@@ -29,7 +29,7 @@
     "airdrop_interval_ms": 120000,
     "airdrop_max": 4,
     "airdrop_players_per": 30,
-    "bag_lifetime_ms": 60000,
+    "bag_lifetime_ms": 30000,
     "start_bandages": 2,
     "max_bandages": 5,
     "bandage_heal": 30,

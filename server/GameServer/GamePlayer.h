@@ -1,6 +1,6 @@
 #pragma once
 ////////////////////////////////////////////////////////////////////////
-// 플레이어 상태 + 위치 이력(game-spec 9.5) + 사격 기록(10.2)
+// 플레이어 상태 + 위치 이력(game-spec 10.5) + 사격 기록(10.2)
 // EntryContent에서 생성 → Move_Content의 completionKey로 BattleContent에 전달 → BattleContent가 소유/삭제
 ////////////////////////////////////////////////////////////////////////
 #include <cstdint>
@@ -107,7 +107,7 @@ struct ViolationCounter
 
 enum class PlayerState : uint8_t { Alive, Dead };
 
-// 위반 종류 (game-spec 10.4). 킥 로그에 종류별 횟수와 마지막 종류를 남긴다
+// 위반 종류 (game-spec 11.4). 킥 로그에 종류별 횟수와 마지막 종류를 남긴다
 enum ViolationKind : uint8_t
 {
 	VIOL_NONE = 0,
@@ -168,7 +168,7 @@ public:
 	uint32_t lastShotSeq = 0;
 	float fireTokens = 3;
 
-	// v6 인벤토리 (game-spec 19.1)
+	// v6 인벤토리 (game-spec 6.1)
 	uint8_t equipped = SLOT_PISTOL;     // 1 특수 총, 2 권총
 	uint8_t specialWeaponId = 0;        // 0 = 없음
 	uint16_t specialDurability = 0;

@@ -123,11 +123,11 @@ class Bot {
   const W1 = wd && wd.list.find(w => w.id === 1), W2 = wd && wd.list.find(w => w.id === 2), W3 = wd && wd.list.find(w => w.id === 3);
   check(wd && wd.list.length === 3, `SC_WEAPON_DEFS 3종`);
   check(W1 && Math.abs(W1.jitter - 3) < 1e-4 && W1.durability === 0 && W1.slot === 2, '권총: 흔들림 3°, 내구도 무한, 슬롯 2');
-  check(W2 && W2.pellets === 5 && Math.abs(W2.spread - 10) < 1e-4 && W2.jitter === 0 && W2.durability === 80 && W2.slot === 1 && W2.interval === 1000 && W2.damage === 20 && Math.abs(W2.range - 25) < 1e-4,
-    '샷건: 5발 ±5°, 산탄당 20, 1초, 내구도 80, 사거리 25');
-  check(W3 && W3.damage === 60 && W3.interval === 2000 && W3.durability === 50 && Math.abs(W3.range - 45) < 1e-4 && Math.abs(W3.speed - 200) < 1e-4, '저격총: 60, 2초, 내구도 50, 사거리 45/탄속 200');
+  check(W2 && W2.pellets === 5 && Math.abs(W2.spread - 12) < 1e-4 && W2.jitter === 0 && W2.durability === 40 && Math.abs(W2.speed - 130) < 1e-4 && W2.slot === 1 && W2.interval === 1000 && W2.damage === 20 && Math.abs(W2.range - 25) < 1e-4,
+    '샷건: 5발 ±6°, 산탄당 20, 1초, 내구도 40, 사거리 25, 탄속 130');
+  check(W3 && W3.damage === 60 && W3.interval === 2000 && W3.durability === 30 && Math.abs(W3.range - 45) < 1e-4 && Math.abs(W3.speed - 200) < 1e-4, '저격총: 60, 2초, 내구도 30, 사거리 45/탄속 200');
   const inv0 = await a.wait(T.SC_INVENTORY);
-  check(inv0 && inv0.equipped === 2 && inv0.special === 0 && inv0.bandages === 2, `SC_INVENTORY 초기 (권총, 특수 총 없음, 붕대 2) → ${inv0 && JSON.stringify(inv0)}`);
+  check(inv0 && inv0.equipped === 2 && inv0.special === 0 && inv0.bandages === 2, `SC_INVENTORY 초기 (권총, 특수 무기 없음, 붕대 2) → ${inv0 && JSON.stringify(inv0)}`);
   const order = a.all.map(m => m.type).filter(t => [T.SC_WEAPON_DEFS, T.SC_INVENTORY].includes(t));
   check(order[0] === T.SC_WEAPON_DEFS && order[1] === T.SC_INVENTORY, '입장 순서: WEAPON_DEFS → INVENTORY');
   const adImm = await a.wait(T.SC_AIRDROP, m => m.isNew === 1, 500);
@@ -142,7 +142,7 @@ class Bot {
   console.log('== 무기 전환');
   a.send(new W(T.CS_SWITCH).u8(1));
   const resync = await a.wait(T.SC_INVENTORY, () => true, 800);
-  check(resync && resync.equipped === 2, '특수 총 없이 1번 전환 → SC_INVENTORY 재동기화 (권총 유지)');
+  check(resync && resync.equipped === 2, '특수 무기 없이 1번 전환 → SC_INVENTORY 재동기화 (권총 유지)');
   a.fire(2, b.x, b.z);
   check((await b.wait(T.SC_FIRE, () => true, 500)) === null, '장착하지 않은 무기(샷건) 사격 거부');
   const s0 = a.fire(1, b.x, b.z, 77);
@@ -228,10 +228,10 @@ class Bot {
   await sleep(1000);
   a.send(new W(T.CS_OPEN).u32(bagItem.id));
   const bc = await a.wait(T.SC_CONTENTS, m => m.id === bagItem.id, 800);
-  check(bc && bc.special === 0 && bc.bandages === 1, `1초 정지 후 열기 → 내용물 (특수 총 없음, 붕대 1) ${bc && JSON.stringify(bc)}`);
+  check(bc && bc.special === 0 && bc.bandages === 1, `1초 정지 후 열기 → 내용물 (특수 무기 없음, 붕대 1) ${bc && JSON.stringify(bc)}`);
   a.send(new W(T.CS_TAKE).u32(bagItem.id).u8(1));
   const bcSame = await a.wait(T.SC_CONTENTS, m => m.id === bagItem.id, 800);
-  check(bcSame && bcSame.bandages === 1, '없는 특수 총 획득 요청 → 최신 내용 재전송');
+  check(bcSame && bcSame.bandages === 1, '없는 특수 무기 획득 요청 → 최신 내용 재전송');
   a.send(new W(T.CS_TAKE).u32(bagItem.id).u8(3));
   const invA1 = await a.wait(T.SC_INVENTORY, m => m.bandages === 3, 800);
   check(invA1 !== null, '가방 붕대 획득 → A 붕대 3');
@@ -265,8 +265,8 @@ class Bot {
   const ac = await a.wait(T.SC_CONTENTS, m => m.id === ad1.id, 800);
   const dc = await d.wait(T.SC_CONTENTS, m => m.id === ad1.id, 800);
   const special = ac && ac.special;
-  const maxDur = special === 2 ? 80 : 50;
-  check(ac && (special === 2 || special === 3) && ac.durability === maxDur && ac.bandages === 5, `에어드랍 내용물: 특수 총 ${special} (내구도 ${ac && ac.durability}), 붕대 5`);
+  const maxDur = special === 2 ? 40 : 30;
+  check(ac && (special === 2 || special === 3) && ac.durability === maxDur && ac.bandages === 5, `에어드랍 내용물: 특수 무기 ${special} (내구도 ${ac && ac.durability}), 붕대 5`);
   check(dc !== null, '여러 명이 동시에 열 수 있음 (D)');
   a.send(new W(T.CS_TAKE).u32(ad1.id).u8(3));
   const invA3 = await a.wait(T.SC_INVENTORY, m => m.bandages === 5, 800);
@@ -275,24 +275,24 @@ class Bot {
   check(left !== null, '열어 둔 D에게 내용 갱신: 최대를 넘는 붕대 3개는 남음');
   d.send(new W(T.CS_TAKE).u32(ad1.id).u8(1));
   const invD = await d.wait(T.SC_INVENTORY, m => m.special === special, 800);
-  check(invD && invD.durability === maxDur && invD.equipped === 2, `D 특수 총 획득 (장착은 권총 유지) ${invD && JSON.stringify(invD)}`);
+  check(invD && invD.durability === maxDur && invD.equipped === 2, `D 특수 무기 획득 (장착은 권총 유지) ${invD && JSON.stringify(invD)}`);
   a.send(new W(T.CS_TAKE).u32(ad1.id).u8(1));
   check((await a.wait(T.SC_INVENTORY, m => m.special !== 0, 500)) === null, '늦게 온 요청(A)은 실패');
   const delA = await a.wait(T.SC_C_DELETE, m => m.ids.includes(ad1.id), 1000);
   const delC = await c.wait(T.SC_C_DELETE, m => m.ids.includes(ad1.id), 1000);
-  check(delA !== null && delC !== null, '특수 총을 가져가면 붕대가 남아도 즉시 제거 (방 전체 SC_CONTAINER_DELETE)');
+  check(delA !== null && delC !== null, '특수 무기을 가져가면 붕대가 남아도 즉시 제거 (방 전체 SC_CONTAINER_DELETE)');
   const ad3 = await a.wait(T.SC_AIRDROP, m => m.isNew === 1, 4000);
   check(ad3 !== null, '제거 후 다음 회차에 새 에어드랍');
 
-  console.log('== 특수 총 사용');
+  console.log('== 특수 무기 사용');
   d.send(new W(T.CS_SWITCH).u8(1));
   await sleep(100);
   a.drop(T.SC_FIRE);
   const s1 = d.fire(special, a.x, a.z, 5);
   const df = await a.wait(T.SC_FIRE, m => m.seq === s1.seq && m.shooter === d.id, 800);
-  check(df && df.weapon === special, `1번 전환 후 특수 총(${special}) 사격`);
+  check(df && df.weapon === special, `1번 전환 후 특수 무기(${special}) 사격`);
   d.fire(1, a.x, a.z);
-  check((await a.wait(T.SC_FIRE, () => true, 500)) === null, '특수 총 장착 중 권총 사격 거부');
+  check((await a.wait(T.SC_FIRE, () => true, 500)) === null, '특수 무기 장착 중 권총 사격 거부');
   if (special === 2) {
     await sleep(Math.min(1500, s1.dist / 100 * 1000) + 30);
     for (let p = 0; p < 5; p++) d.hit(s1, a, p);

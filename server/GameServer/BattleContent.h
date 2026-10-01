@@ -1,6 +1,6 @@
 #pragma once
 ////////////////////////////////////////////////////////////////////////
-// 전투 방 1개 (game-spec 6, 9.3~9.5, 10). 플레이어·섹터·랭킹·전투 판정을 모두 소유.
+// 전투 방 1개 (game-spec 7, 10.3~10.5, 11). 플레이어·섹터·랭킹·전투 판정을 모두 소유.
 // Content 콜백은 단일 스레드로 실행되므로 멤버에 락이 필요 없다.
 // reserved(방 배정 예약 수)만 EntryContent와 공유 → atomic.
 ////////////////////////////////////////////////////////////////////////
@@ -40,7 +40,7 @@ private:
 	struct PendingDisconnect { unsigned long long handle; uint32_t at; };
 	struct RankEntry { uint32_t id; uint32_t score; };
 
-	// 가방·에어드랍 (game-spec 19.5~19.7)
+	// 가방·에어드랍 (game-spec 6.3~6.5)
 	struct Container
 	{
 		uint32_t id;
