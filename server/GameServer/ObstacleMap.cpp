@@ -182,7 +182,7 @@ void ObstacleMap::ComputeHash()
 	m_hash = h;
 }
 
-bool ObstacleMap::CircleBlocked(float x, float z, float r) const
+bool ObstacleMap::CircleBlocked(float x, float z, float r, const uint8_t* destroyed) const
 {
 	if (!m_loaded) return false;
 	int x0 = (int)floorf(x - r), x1 = (int)floorf(x + r);
@@ -190,7 +190,7 @@ bool ObstacleMap::CircleBlocked(float x, float z, float r) const
 	for (int cz = z0; cz <= z1; cz++)
 		for (int cx = x0; cx <= x1; cx++)
 		{
-			if (!BlocksMove(cx, cz)) continue;
+			if (!BlocksMove(cx, cz, destroyed)) continue;
 			float nx = x < cx ? (float)cx : (x > cx + 1 ? (float)cx + 1 : x);
 			float nz = z < cz ? (float)cz : (z > cz + 1 ? (float)cz + 1 : z);
 			float dx = x - nx, dz = z - nz;
@@ -216,7 +216,7 @@ bool ObstacleMap::SegmentBlocked(float ax, float az, float bx, float bz, bool bu
 	for (int guard = 0; guard < 20000; guard++)
 	{
 		bool blocked;
-		if (!bullets) blocked = BlocksMove(cx, cz);
+		if (!bullets) blocked = BlocksMove(cx, cz, destroyed);
 		else
 		{
 			uint8_t t = At(cx, cz);

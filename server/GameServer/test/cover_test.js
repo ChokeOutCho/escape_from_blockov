@@ -113,16 +113,14 @@ async function run(host, port) {
   check(s0 && s0.id === 0 && s0.destroyed === 1 && s0.regen === 3 && Math.abs((s0.at - tDestroy) | 0) < 300,
     `SC_COVER_STATE 파괴 (id ${s0 && s0.id}, regen ${s0 && s0.regen}초, 파괴 시각 오차 ${s0 && (s0.at - tDestroy)}ms)`);
 
-  console.log('== 반 블럭');
+  console.log('== 파괴된 엄폐물 (잔해: 이동·총알 통과)');
   await sleep(260);
   seq = a.fire(1, 0); await sleep(250);
   a.report(seq, b.id, 544.4, 525);
-  check((await b.wait(3107, p => p.readUInt32LE(10) === seq, 800)) !== null, '파괴된 엄폐물(반 블럭) 너머 피격 → 인정 (총알 통과)');
+  check((await b.wait(3107, p => p.readUInt32LE(10) === seq, 800)) !== null, '파괴된 엄폐물 너머 피격 → 인정 (총알 통과)');
   a.report(seq, COVER_BIT | 0, 535, 525);
   check((await a.wait(3122, () => true, 400)) === null, '파괴된 엄폐물 피격 보고 → 무시');
-  const okInto = await b.walkTo(536, 525);
-  check(!okInto && b.x > 537, `반 블럭 안으로 이동 → 보정 (x=${b.x.toFixed(2)})`);
-  check(await b.walkTo(545, 525), 'B 제자리(545,525)로');
+  check(await b.walkTo(536, 525), `파괴된 엄폐물 안으로 이동 → 허용 (x=${b.x.toFixed(2)})`);
 
   console.log('== 잘못된 엄폐물 보고');
   await sleep(260);
@@ -142,9 +140,17 @@ async function run(host, port) {
   const cs = await c.wait(3123, () => true, 800);
   const ids = cs ? coverStates(cs).filter(s => s.destroyed).map(s => s.id).sort() : [];
   check(ids.length === 2 && ids[0] === 0 && ids[1] === 1, `입장 시 SC_COVER_STATE로 파괴된 엄폐물 목록 (${ids})`);
-  const regen = await c.wait(3123, p => coverStates(p).some(s => s.id === 0 && s.destroyed === 0), 4000);
+  const early = await c.wait(3123, p => coverStates(p).some(s => s.id === 0 && s.destroyed === 0), Math.max(0, tDestroy + 4200 - c.serverNow()));
+  check(early === null, 'B가 엄폐물 0 자리에 서 있는 동안 재생 대기 (재생 시간 3초 지나도)');
+  check(await b.walkTo(545, 525), 'B가 비켜섬 (545,525)');
+  const regen = await c.wait(3123, p => coverStates(p).some(s => s.id === 0 && s.destroyed === 0), 1500);
   const waited = regen ? c.serverNow() - tDestroy : -1;
-  check(regen !== null && waited >= 2900 && waited < 4000, `30초(테스트 3초) 뒤 재생 SC_COVER_STATE destroyed=0 (${waited}ms)`);
+  check(regen !== null && waited >= 4000, `비켜서자 재생 SC_COVER_STATE destroyed=0 (${waited}ms)`);
+  const r1 = c.all.some(p => p.readUInt16LE(0) === 3123 && coverStates(p).some(s => s.id === 1 && s.destroyed === 0)) ||
+    (await c.wait(3123, p => coverStates(p).some(s => s.id === 1 && s.destroyed === 0), 3500)) !== null;
+  check(r1, '아무도 없는 엄폐물 1은 3초 뒤 정상 재생');
+  check(!(await b.walkTo(536, 525)) && b.x > 537, `재생된 엄폐물 안으로 이동 → 보정 (x=${b.x.toFixed(2)})`);
+  check(await b.walkTo(545, 525), 'B 제자리');
   await sleep(300);
   seq = a.fire(1, 0); await sleep(250);
   a.report(seq, b.id, 544.4, 525);

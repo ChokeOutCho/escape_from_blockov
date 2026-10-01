@@ -28,7 +28,7 @@ namespace MapConst
 
 ////////////////////////////////////////////////////////////////////////
 // 장애물 맵 (BMP, 1픽셀 = 1m x 1m, 이미지 좌하단 = 월드 (0,0), 위쪽 = +Z)
-//  - 빨강(R>=150, G<=100, B<=100): DEST → 파괴 가능한 엄폐물 (멀쩡하면 이동·총알 차단, 파괴되면 LOW처럼)
+//  - 빨강(R>=150, G<=100, B<=100): DEST → 파괴 가능한 엄폐물 (멀쩡하면 이동·총알 차단, 파괴되면 통과)
 //                                  체력 단계 level = 1 + (R-150)*9/105 (1~10), 체력 = level*10
 //  - 어두운 픽셀(밝기 < 64)  : WALL  → 이동·총알 차단
 //  - 중간 밝기(64 ~ 223)     : LOW   → 이동만 차단 (총알 통과)
@@ -64,6 +64,18 @@ public:
 		return (uint8_t)(m_cells[(size_t)z * MapConst::WorldCells + x] & 3);
 	}
 	bool BlocksMove(int x, int z) const { return At(x, z) != EMPTY; }
+	// 방의 파괴 상태(엄폐물 id별)를 반영한 이동 차단. destroyed가 없으면 BlocksMove와 같다
+	bool BlocksMove(int x, int z, const uint8_t* destroyed) const
+	{
+		uint8_t t = At(x, z);
+		if (t == EMPTY) return false;
+		if (t == DEST && destroyed)
+		{
+			int id = CoverAt(x, z);
+			return !(id >= 0 && destroyed[id]);
+		}
+		return true;
+	}
 	// 파괴 상태를 모를 때(정적): 파괴 가능 엄폐물도 총알을 막는 것으로 본다
 	bool BlocksBullet(int x, int z) const { uint8_t t = At(x, z); return t == WALL || t == DEST; }
 	// 파괴 가능 엄폐물 id (없으면 -1)
@@ -77,10 +89,10 @@ public:
 	// 점(x,z)에서 엄폐물 칸까지 최단 거리
 	float DistanceToCover(int coverId, float x, float z) const;
 
-	// 원(x,z,r)이 이동 차단 셀과 겹치는가
-	bool CircleBlocked(float x, float z, float r) const;
+	// 원(x,z,r)이 이동 차단 셀과 겹치는가 (destroyed: 파괴된 엄폐물 칸은 빈 칸으로 본다)
+	bool CircleBlocked(float x, float z, float r, const uint8_t* destroyed = nullptr) const;
 	// 선분 A→B가 지나는 셀 중 차단 셀이 있는가
-	//  bullets=false: WALL+LOW+DEST(이동)
+	//  bullets=false: WALL+LOW+멀쩡한 DEST(이동). destroyed가 없으면 DEST는 항상 막음
 	//  bullets=true : WALL + 멀쩡한 DEST. destroyed(엄폐물 id별 파괴 여부)가 없으면 DEST는 항상 막음. ignoreCover는 막지 않음
 	bool SegmentBlocked(float ax, float az, float bx, float bz, bool bullets,
 	                    const uint8_t* destroyed = nullptr, int ignoreCover = -1) const;

@@ -26,7 +26,7 @@
 
     "airdrop_interval_ms": 60000,
     "airdrop_notice_ms": 30000,
-    "airdrop_max": 4,
+    "airdrop_max": 7,
     "airdrop_players_per": 30,
     "bag_lifetime_ms": 30000,
     "cover_regen_ms": 30000,

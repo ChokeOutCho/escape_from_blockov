@@ -404,8 +404,8 @@ void BattleContent::HandleMove(GamePlayer* p, PayloadReader& r, uint32_t now)
 		if (speed > m_cfg.moveSpeed * m_cfg.sprintMultiplier * 1.1f) viol = VIOL_MOVE_SPEED;   // 달리기 포함
 	}
 	// 엄폐물: 이동 경로(중심선)와 도착 위치(원)가 막힌 셀과 겹치면 거부
-	if (!viol && (m_obstacles.SegmentBlocked(p->x, p->z, tx, tz, false) ||
-	              m_obstacles.CircleBlocked(tx, tz, m_cfg.characterRadius - 0.1f)))
+	if (!viol && (m_obstacles.SegmentBlocked(p->x, p->z, tx, tz, false, m_coverDestroyed.data()) ||
+	              m_obstacles.CircleBlocked(tx, tz, m_cfg.characterRadius - 0.1f, m_coverDestroyed.data())))
 		viol = VIOL_MOVE_BLOCKED;
 	if (!viol)
 	{
@@ -1150,8 +1150,8 @@ void BattleContent::HandleRoll(GamePlayer* p, PayloadReader& r, uint32_t now)
 	sz = Clampf(sz, MapConst::MinPos, MapConst::MaxPos);
 	{
 		float ex = sx - p->x, ez = sz - p->z;
-		if (ex * ex + ez * ez <= 9.0f && !m_obstacles.SegmentBlocked(p->x, p->z, sx, sz, false) &&
-			!m_obstacles.CircleBlocked(sx, sz, m_cfg.characterRadius - 0.1f))
+		if (ex * ex + ez * ez <= 9.0f && !m_obstacles.SegmentBlocked(p->x, p->z, sx, sz, false, m_coverDestroyed.data()) &&
+			!m_obstacles.CircleBlocked(sx, sz, m_cfg.characterRadius - 0.1f, m_coverDestroyed.data()))
 		{
 			ox = sx; oz = sz;
 		}
@@ -1167,7 +1167,7 @@ void BattleContent::HandleRoll(GamePlayer* p, PayloadReader& r, uint32_t now)
 	{
 		float nx = Clampf(cx + dx * stepLen, MapConst::MinPos, MapConst::MaxPos);
 		float nz = Clampf(cz + dz * stepLen, MapConst::MinPos, MapConst::MaxPos);
-		if (m_obstacles.CircleBlocked(nx, nz, m_cfg.characterRadius)) break;
+		if (m_obstacles.CircleBlocked(nx, nz, m_cfg.characterRadius, m_coverDestroyed.data())) break;
 		cx = nx; cz = nz;
 	}
 

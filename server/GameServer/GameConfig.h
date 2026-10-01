@@ -43,7 +43,7 @@ struct GameConfig
 	int airdropIntervalMs = 60000;    // 회차 주기 (빈 방에 첫 입장 시 즉시 1회차 후 이 주기로)
 	int airdropNoticeMs = 30000;      // 투하 예고: 이 시간 전에 위치를 정해 방 전체에 공개 (주기보다 길면 주기만큼)
 	int coverRegenMs = 30000;         // 파괴된 엄폐물 재생 시간
-	int airdropMax = 4;               // 방당 최대 (인원 기준 상한의 상한)
+	int airdropMax = 7;               // 방당 최대 (인원 기준 상한의 상한)
 	int airdropPlayersPer = 30;       // 방 인원 N명당 1개 (올림, 최소 1)
 	int bagLifetimeMs = 30000;
 	int startBandages = 2;
