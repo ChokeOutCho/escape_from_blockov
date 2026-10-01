@@ -49,7 +49,7 @@
 | `Profiler.h/.cpp` | `PROFILING(tag)` 스코프 프로파일러, `Profiler::FlushToFile()` |
 | `Parser.h` | 간이 JSON 설정 파서 (`echo_config.txt`, 최대 10 키) |
 | `SystemMonitor.h` | PDH 기반 CPU/메모리/네트워크 모니터 |
-| `CrashDump.h` | 미니덤프 생성 (전역 인스턴스로 자동 설치) |
+| `CrashDump.h` | 크래시 덤프 (전역 인스턴스로 자동 설치). 처리되지 않은 SEH 예외·CRT 잘못된 인자·순수 가상 호출·`abort()`·`std::terminate`를 잡아 작업 폴더 `dumps/Dump_YYYYMMDD_HHMMSS_<pid>.dmp`(전체 메모리)를 프로세스당 1회 쓴다. `CrashDump::SetOnCrash(cb)`로 덤프 직전 콜백(사유·예외 코드·경로, 잠금 대기 금지). 정적 멤버는 `inline`이라 여러 cpp에서 include 가능 |
 
 ### 2.3 예제 애플리케이션 (Echo 서버)
 
@@ -372,3 +372,4 @@ void BattleContent::OnRecv(unsigned long long h, char* payload) {
 - 2026-09-30: `NetLib_Content::OnRecv(h, payload, payloadLen)` 3인자 가상함수 추가 (Update가 이것을 호출, 기본 구현은 기존 2인자 호출). GameServer 추가.
 - 2026-09-30: 패킷 페이로드 127→512B, 소켓 recv 링버퍼 128→2048B(`NetLibDefine.h` 상수화), 수신 스택 버퍼가 헤더 크기만큼 넘치던 문제 수정, `SimpleEncoder` temp 513B. 암호화 옵션 `nullptr` 시 헤더 Code 기본값(0x77) 초기화 + RandKey/CheckSum 0 송신(이전엔 미초기화), `echo_config.txt`의 `encryption` 반영. `GameProtocol.h` 추가(CS_PING/SC_PONG/CS_HEARTBEAT), 하트비트 타임아웃 40s→3분. 수정된 이슈: `Player::CreatePlayer` sessionHandle 미설정, WRONG_HEADER_CODE 오기록.
 - 2026-09-30: `NetLib_Server`에 송수신 바이트 카운터 추가(`GetBPS_Recv/GetBPS_Send`, send/recv 완료 시 `InterlockedAdd64`, MonitorThread에서 1초마다 교환). `TLSObjectPool.h`를 사용자가 SRWLOCK + `std::stack` 공용 저장소로 변경(멀티스레드 재사용 문제 해결) — 검토 결과는 2.2 참고.
+- 2026-10-01: `CrashDump.h` — 덤프를 `dumps/Dump_YYYYMMDD_HHMMSS_<pid>.dmp`로(같은 날 덮어쓰기 방지), abort·std::terminate 처리 추가, 프로세스당 1회, `SetOnCrash` 콜백, 정적 멤버 inline화. GameServer·DummyClient가 사용.

@@ -15,20 +15,23 @@ WebGL 빌드 2.5D PvP 슈팅 게임(동시 50인) 클라이언트(`client/`)와 
   - Unity 에셋: `AssetDatabase.MoveAssetToTrash(path)`
 
 ## 구성 (2026-09-30)
-- 게임 명세: 프로젝트 문서 `claude/game-spec.md` (v0.9, 이 저장소의 `GAME_SPEC.md`는 사본). 프로토콜 v6
-- 조작(v0.9): 카메라 줌 `[` `]`, 마우스 휠은 전체 맵(M) 줌 전용. 섹터 표기는 지도 좌표(`GameSession.SectorLabel`, 열 A~AD / 행 1~30, 위쪽이 1)
-- 더미 강도: `server/DummyClient/dummy_config.txt`의 `weakness_min/max`, `reaction_base_ms`, `aim_error_max_deg` (명세 20.5)
+- 게임 명세: 프로젝트 문서 `claude/game-spec.md` (v0.14, 이 저장소의 `GAME_SPEC.md`는 사본). 프로토콜 v7
+- 조작: 카메라 줌 `[` `]`은 디버그용(화면 안내 없음), 마우스 휠은 전체 맵(M) 줌 전용. 위치 표기는 구역 번호 1~100(`GameSession.RegionLabel`)
+- 더미 강도: `server/DummyClient/dummy_config.txt`의 `weakness_min/max`, `reaction_base_ms`, `aim_error_max_deg` (명세 17.5)
 - 실행: 저장소 최상단 `start_server.bat` [`build`] [`web`] / `stop_server.bat` (명세 18장). 게임 서버·게이트웨이·WebGL 웹서버를 한 번에 실행, `web`은 브라우저 열기
 - 테스트 모드: `server/GameServer/game_config.txt`의 `test_mode: true` → 모든 플레이어를 섹터 (0,0)에 스폰
 - 게임 서버: `server/GameServer/` (README 참고, `GameServer.sln` Release x64). 로직 테스트: `test/` 스텁 + Node 봇
 - 더미 클라이언트: `server/DummyClient/` (C++ IOCP, `DummyClient.sln` Release x64, README 참고). 대규모 테스트 서버 설정: `server/GameServer/test/stress/`
 - `ObstacleMap.h/.cpp`(서버)는 NetLib 의존 없이 유지할 것 — DummyClient가 함께 컴파일한다
 - 게이트웨이: `server/gateway/index.js` (WS 8080 → TCP 10301)
-- 엄폐물 맵: `map/obstacles.bmp` (1픽셀 = 1m, 검정 = 벽, 회색 = 낮은 엄폐물). 수정 후 서버 재시작 + Unity `Blockov/Map/Import Obstacles (default BMP)` + WebGL 재빌드
+- 엄폐물 맵: `map/obstacles.bmp` (1픽셀 = 1m, 검정 = 벽, 회색 = 낮은 엄폐물, 빨강 R150~255 = 파괴 가능 엄폐물 체력 10~100). 예시 맵은 `map/generate_example_map.py`. 수정 후 서버 재시작 + Unity `Blockov/Map/Import Obstacles (default BMP)` + WebGL 재빌드. 파괴 가능 엄폐물 상자는 씬 `Covers`(CoverManager)가 실행 시 만든다
+- 스폰: 고정 지점 없음(주변 3x3 인원이 가장 적은 섹터). 테스트 설정은 `test_mode` + `test_spawn_sector_x/y` + `test_spawn_radius`
+- 효과음: `client/.../Assets/Resources/Audio/*.wav` (`client/escape_from_blockov/Tools/make_sfx.py`로 합성)
+- 크래시 덤프: 서버·더미 모두 작업 폴더 `dumps/` (`Utils/CrashDump.h`)
 - 섹터: 50m × 30×30 = 월드 1500m (`SectorGrid.cs` / 서버 `ObstacleMap.h`의 `MapConst`). 방 정원 300
-- 아이템(v0.8, 명세 19장): 슬롯 1 특수 무기(샷건·저격총, 내구도) / 2 권총 / 3 붕대, Space 구르기, F 가방·에어드랍. 무기는 `weapons.txt`(15열: … jitterDeg durability slot). 수치는 `game_config.txt`(airdrop_*, bag_*, roll_*, bandage_* 등)
+- 아이템(명세 5·6장): 슬롯 1 특수 무기(샷건·저격총, 내구도) / 2 기본 무기(권총) / 3 붕대, Space 구르기, F 가방·에어드랍. 무기는 `weapons.txt`(15열: … jitterDeg durability slot). 수치는 `game_config.txt`(airdrop_*, bag_*, roll_*, bandage_* 등)
   - 클라는 구르기·붕대·상호작용 시간(0.25/3/2초, 2.5m, 1/2초)을 `GameSession` 상수로 가지고 있다. 서버 설정을 바꾸면 함께 바꿀 것
-  - 서버 기능 테스트: `test/item` 설정(에어드랍 3초 주기) + `node test/item_test.js 127.0.0.1 10502`, 기본: `test/run` + `bot_test.js` (10501)
+  - 서버 기능 테스트: `server/GameServer/README.md` 표 (run 10501 / item 10502 / obs 10502 / cover 10503 / spawn 10504)
 - 클라: `client/escape_from_blockov` — 씬 Title(0) → TestArena(1), 스크립트 `Assets/Scripts/Network`, `Assets/Scripts/Game`, `Assets/Scripts/Map`, 에디터 도구 `Assets/Editor`
 - WebGL: `start_server.bat` → `http://localhost:8090/` (웹서버가 `/ws`로 게임 WS 중계). 외부 접속은 공유기 TCP 8090 포트포워딩(명세 18.4). 8080·10301은 외부에 열지 않음
 

@@ -1,4 +1,4 @@
-# escape_from_blockov 게임 명세서 v0.13
+# escape_from_blockov 게임 명세서 v0.14
 
 > 작성일: 2026-10-01
 > 대상: Unity 6000.6.3f1 클라이언트(`client/escape_from_blockov`), NetLib 기반 게임 서버(`server/GameServer`), WS↔TCP 게이트웨이(`server/gateway`), 더미 클라이언트(`server/DummyClient`)
@@ -15,18 +15,20 @@
 | 진입 흐름 | 로비 없음. 타이틀에서 이름 입력 → 즉시 방 배정 → 전투 |
 | 방 구성 | 다중 방 자동 배정. 방 = `BattleContent` 인스턴스. 정원 `room_capacity` 300, 방 4개 |
 | 전송 | WebSocket 단일(에디터/Standalone 포함). 서버까지는 게이트웨이가 WS↔TCP 중계 |
-| 패킷 | NetHeader 5B + 페이로드 ≤ 512B, 암호화 없음(Code 119만 검사), 프로토콜 v6 |
+| 패킷 | NetHeader 5B + 페이로드 ≤ 512B, 암호화 없음(Code 119만 검사), 프로토콜 v7 |
 | 하트비트 | 서버 타임아웃 3분, 클라 60초마다 `CS_HEARTBEAT` |
 | 레이턴시 | `CS_PING`/`SC_PONG`(2초)으로 RTT 측정·시각 동기화, 화면 좌상단 표시 |
 | 이동 | 클라 권위 + 서버 검증(속도·맵 경계·엄폐물). 위반 시 위치 보정. Shift 달리기 ×1.5 |
 | 구르기 | Space: 키보드 이동 방향으로 이동속도×3, 0.25초(약 9m), 쿨타임 3초, 엄폐물 앞 정지, 무적 없음 |
 | 피격 | 오토타게팅: 사수 클라가 판정·보고 → 서버가 발사 시각 기준 과거 위치로 되감아 검증 |
 | 시야 | 기준 섹터 + 인접 8섹터(3×3, 섹터 50m). 브로드캐스트도 3×3 한정(랭킹·접속 인원·에어드랍만 방 전체) |
-| 엄폐물 | BMP 1픽셀 = 1m. 검정 = 벽(이동·총알 차단), 회색 = 낮은 엄폐물(이동만 차단) |
+| 엄폐물 | BMP 1픽셀 = 1m. 검정 = 벽(이동·총알 차단), 회색 = 낮은 엄폐물(이동만 차단), 빨강 = 파괴 가능한 엄폐물(체력 10~100, 파괴되면 30초 동안 반 블럭 = 낮은 엄폐물, 약 3,000개) |
 | 무기 | 슬롯 1 특수 무기(샷건·저격총, 내구도), 슬롯 2 기본 무기(권총, 무한), 슬롯 3 붕대(최대 5) |
-| 에어드랍 | 2분 주기, 방 인원 30명당 1개(최대 4), 첫 입장 즉시 생성, 특수 무기를 가져가면 즉시 제거 |
+| 에어드랍 | 1분 주기, 투하 30초 전에 예정 위치를 방 전체에 공개(전체 맵에 위치·남은 초), 방 인원 30명당 1개(최대 4), 첫 입장 즉시 생성, 특수 무기를 가져가면 즉시 제거 |
 | 가방 | 쓰러진 자리에 30초. 특수 무기(남은 내구도)·붕대 |
 | 전체 맵 | M 토글, 구역 번호 1~100, 휠 줌·드래그, Esc 닫기 |
+| 스폰 | 주변 3×3 섹터 인원이 가장 적은 섹터 안 무작위 위치. 스폰 이펙트(빛 기둥 + 바닥 링) |
+| 사운드 | 무기별 발사, 명중, 피격, 처치, 엄폐물 피격·파괴, 스폰. 다른 사람 발사 소리는 거리 감쇠·좌우 방향 |
 | 사망 | 결과창 → 타이틀 복귀(연결 종료). 점수 소멸 |
 | 점수/랭킹 | 킬 시 +1 + floor(피해자 점수 × 0.5). 방 내 상위 3명 우상단 표시 |
 | 닉네임 | 1~12자(UTF-16), 양끝 공백 제거, 중복 허용, 비면 `Guest####`. 식별은 서버 발급 PlayerID |
@@ -88,10 +90,10 @@ flowchart LR
 | 섹터 계산 | `sx = floor(x/50)`, `sy = floor(z/50)`, 인덱스 `sy*30+sx` (클라 `SectorGrid.cs`, 서버 `MapConst`/`SectorMap.h`) |
 | 이동 가능 영역 | 외벽 두께 2 → `x, z ∈ [2.0, 1498.0]` |
 | 바닥 | 섹터 체커 무늬 쿼드 1장(`Ground`, 텍스처 30×30, 1텍셀 = 1섹터). 메뉴 `Blockov/Map/Rebuild Sector Ground` |
-| 스폰 | **49개**(7×7 격자, 섹터 2·6·10·…·26 = 200m 간격, `Spawn_NN_Sxx_yy`). 메뉴 `Blockov/Map/Export spawns.txt`로 `spawns.txt`(한 줄 `sx sy`)를 추출해 서버가 로드 |
+| 스폰 | 고정 지점 없음. 서버가 인원 분포로 정한다(아래) |
 | 엄폐물 | `map/obstacles.bmp` (3.3) |
 
-**스폰 선택(서버)**: 스폰 섹터의 3×3 안에 살아있는 플레이어가 0명인 스폰 중 무작위 → 없으면 3×3 인원이 가장 적은 스폰. 같은 스폰을 여러 명이 쓰면 섹터 중심에서 반경 `spawn_offset_radius`(20) 내 무작위 오프셋. 선택 지점이 엄폐물과 겹치면 가장 가까운 빈 칸으로 옮긴다(`ObstacleMap::FindFree`).
+**스폰 선택(서버)**: 900개 섹터마다 그 섹터와 인접 8섹터(3×3, 시야 범위)의 살아있는 인원을 세어 **가장 적은 섹터들 중 무작위** 1개 → 그 섹터 안 무작위 위치(경계에서 4m 안쪽). 그 지점이 엄폐물과 겹치면 가장 가까운 빈 칸으로 옮긴다(`ObstacleMap::FindFree`). 입장한 본인과 시야 안 플레이어에게 스폰 이펙트가 재생된다(12.4).
 
 **테스트 모드**(`test_mode: true`): 섹터 (`test_spawn_sector_x`, `test_spawn_sector_y`)(기본 (0,0)) 안의 무작위 위치(경계에서 반지름+4m 안쪽)에 스폰하고, 엄폐물과 겹치면 가까운 빈 칸으로 옮긴다. 서버 시작 로그와 대시보드에 `[TEST MODE]`가 표시된다.
 
@@ -104,7 +106,7 @@ flowchart LR
 ### 3.2 카메라
 
 - 2.5D 정사영 사선 카메라(피치 55°), 로컬 플레이어 추적.
-- 보이는 반경 기본 25, **`[` 줌인 / `]` 줌아웃**(누르는 동안 연속, 초당 약 ×2.5), 범위 15~200. 200은 디버그 상한이다(16장 열린 이슈 1).
+- 보이는 반경 기본 25. 디버그용으로 `[` 줌인 / `]` 줌아웃(누르는 동안 연속, 초당 약 ×2.5, 범위 15~200)이 있으며 화면 조작 안내에는 표시하지 않는다(16장 열린 이슈 1).
 - 50~200 구간은 서버가 정보를 주지 않을 수 있어 적이 화면 안에서 나타나거나 사라질 수 있다(디버그 중 허용).
 
 ### 3.3 엄폐물 맵 (BMP)
@@ -118,23 +120,34 @@ flowchart LR
 | 색 판정 | 밝기 `L = (299R + 587G + 114B) / 1000` |
 | **벽** (Wall) | `L < 64` (검정) → 이동 차단 + 총알 차단 |
 | **낮은 엄폐물** (Low) | `64 ≤ L < 224` (회색) → 이동 차단, 총알 통과 |
+| **파괴 가능** (Destructible) | `R ≥ 150` 이고 `G ≤ 100`, `B ≤ 100` (빨강, 밝기 판정보다 먼저) → 멀쩡할 때 이동·총알 차단, 파괴되면 낮은 엄폐물(3.6). 체력 단계 `level = 1 + (R − 150) × 9 / 105`(정수 나눗셈, 1~10), 체력 = level × 10 |
 | 빈 칸 | `L ≥ 224` (흰색) |
 | 맵 밖 | 벽으로 취급 |
-| 해시 | 1500×1500 칸 값(0/1/2)을 z 오름차순·x 오름차순으로 FNV-1a 32bit. 서버가 `SC_ENTER_GAME.MapHash`로 전달, 클라는 임포트 시 계산한 값과 비교해 다르면 화면 상단에 "맵 데이터가 서버와 다릅니다" 경고. 서버가 맵을 못 읽으면 해시 0(엄폐물 없이 실행)이라 경고가 뜬다 |
+| 해시 | 1500×1500 칸 값을 z 오름차순·x 오름차순으로 FNV-1a 32bit. 칸 값 = 빈 칸 0, 낮은 엄폐물 1, 벽 2, 파괴 가능 `3 + level × 16`. 서버가 `SC_ENTER_GAME.MapHash`로 전달, 클라는 임포트 시 계산한 값과 비교해 다르면 화면 상단에 "맵 데이터가 서버와 다릅니다" 경고. 서버가 맵을 못 읽으면 해시 0(엄폐물 없이 실행)이라 경고가 뜬다 |
+
+**파괴 가능한 엄폐물 색** (G = B = 40 기준, 그림판 '색 편집'에서 빨강 값만 입력)
+
+| 체력 | 10 | 20 | 30 | 40 | 50 | 60 | 70 | 80 | 90 | 100 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| R | 150 | 162 | 174 | 186 | 198 | 210 | 222 | 234 | 246 | 255 |
+
+- **같은 색(같은 R)으로 상하좌우가 이어진 칸 묶음 = 엄폐물 1개**. 서로 다른 엄폐물로 두려면 한 칸 이상 띄우거나 색을 다르게 한다.
+- 엄폐물 번호(id)는 z 오름차순·x 오름차순으로 칸을 훑다가 처음 만나는 묶음부터 0, 1, 2, … (서버·클라 동일).
 
 **그림판으로 편집하기**
-1. `map/obstacles.bmp`(약 1.1MB, 4비트 16색)를 그림판으로 연다.
-2. 검정(벽)·회색(낮은 엄폐물, 기본 팔레트의 회색 두 가지 모두 해당)·흰색(지우기)으로 그린다. 확대(Ctrl+휠)해서 1픽셀 단위 편집 가능. 캐릭터 지름이 1m이므로 통로는 2픽셀 이상.
-3. **다른 이름으로 저장 → BMP 그림**(16색 또는 24비트). PNG/JPG는 읽지 못한다.
+1. `map/obstacles.bmp`(약 1.1MB, 4비트 16색, 빨강 10단계를 넣은 전용 팔레트)를 그림판으로 연다.
+2. 검정(벽)·회색(낮은 엄폐물)·빨강(파괴 가능, 위 표)·흰색(지우기)으로 그린다. 확대(Ctrl+휠)해서 1픽셀 단위 편집 가능. 캐릭터 지름이 1m이므로 통로는 2픽셀 이상.
+3. **다른 이름으로 저장 → 24비트 비트맵**. 16색으로 저장하면 그림판 기본 팔레트로 바뀌어 빨강 단계가 사라진다. PNG/JPG는 읽지 못한다.
 4. 서버: 재시작하면 반영. 시작 로그와 대시보드 `[Map]` 줄에서 벽/낮은 칸 수와 해시를 확인(`NOT LOADED`면 경로 문제).
 5. 클라: Unity 메뉴 **`Blockov/Map/Import Obstacles (default BMP)`**(또는 `Blockov/Map/Obstacle Map Importer...` 창에서 다른 BMP 선택) → TestArena 씬의 `Obstacles` 루트와 `Resources/Map/obstacle_map.bytes` 갱신, 씬 저장. 이후 WebGL 재빌드.
 6. 서버 해시와 클라 해시(임포터 로그, 게임 화면 경고 유무)가 같아야 한다.
 
 **클라 임포트 도구** (`Assets/Editor/ObstacleMapImporter.cs`)
-- BMP → 칸 배열 → 같은 종류의 칸을 **최대 직사각형으로 병합**(그리디) → `Resources/Map/obstacle_map.bytes`(`"BKOM"`, 버전, 크기, 해시, 사각형 목록 `{type u8, x/z/w/h u16}`).
-- 256m 청크 단위로 합친 메시를 `Assets/Map/Generated/ObstacleChunks.asset`에 만들고 씬 `Obstacles` 아래에 배치(벽 높이 2.5m, 낮은 엄폐물 0.9m — 임포터 창에서 변경, 재질 `M_Obstacle_Wall`/`M_Obstacle_Low`). 이전 생성물은 휴지통으로 이동.
-- 런타임(`ObstacleMap.cs`)은 `obstacle_map.bytes`로 이동·총알 비트셋을 만든다(충돌·전체 맵용, 씬 메시와 독립).
-- 예시 맵: `map/generate_example_map.py`(numpy, 시드 고정). 1500×1500, 벽 26,407칸 / 낮은 엄폐물 11,765칸, 스폰 주변 반경 16 비움, 해시 `0xBCCE0A3A`.
+- BMP → 칸 배열 → 같은 칸 값끼리 **최대 직사각형으로 병합**(그리디) → `Resources/Map/obstacle_map.bytes`(`"BKOM"`, 버전 2, 크기, 해시, 사각형 목록 `{type u8, x/z/w/h u16, cover u16}`, 엄폐물 목록 `{maxHp u8}`). 파괴 가능 사각형은 속한 엄폐물 id를 가진다.
+- 벽·낮은 엄폐물은 256m 청크 단위로 합친 메시를 `Assets/Map/Generated/ObstacleChunks.asset`에 만들고 씬 `Obstacles` 아래에 배치(벽 높이 2.5m, 낮은 엄폐물 0.9m — 임포터 창에서 변경, 재질 `M_Obstacle_Wall`/`M_Obstacle_Low`). 이전 생성물은 휴지통으로 이동.
+- 파괴 가능한 엄폐물은 높이가 바뀌므로 정적 메시에 넣지 않는다. 씬의 `Covers` 오브젝트(`CoverManager`)가 실행 시 `obstacle_map.bytes`를 읽어 엄폐물마다 상자를 만든다(멀쩡 2.0m, 반 블럭 1.0m, 재질 `Resources/Materials/M_Cover`).
+- 런타임(`ObstacleMap.cs`)은 `obstacle_map.bytes`로 이동·총알 판정 격자를 만든다(충돌·전체 맵용, 씬 메시와 독립).
+- 예시 맵: `map/generate_example_map.py`(numpy·scipy, 시드 고정). 1500×1500, 벽 23,709칸 / 낮은 엄폐물 11,765칸 / 파괴 가능 10,339칸 = 3,000개(기존 벽 일부를 바꾼 750개 + 빈 곳의 상자 2,250개), 해시 `0xC89DE93F`.
 
 ### 3.4 구역 번호
 
@@ -146,8 +159,21 @@ flowchart LR
 
 - 전투 중 **M**으로 토글, **Esc**로 닫기(루팅 창도 함께 닫힘). 열 때마다 1배·내 위치 기준으로 초기화.
 - 전체 1500×1500 맵을 텍스처(1px = 1m, `ObstacleMap.BuildMinimap`, 최초 1회 생성)로 표시: 벽 짙은 색, 낮은 엄폐물 갈색, 섹터 경계 가는 선, 구역 경계 굵은 선, 구역 가운데에 반투명 큰 구역 번호.
-- 표시 대상: 내 위치(파란 사각형), 현재 카메라 영역(흰 사각형), 에어드랍(주황, 방 전체의 정확한 위치). 다른 플레이어와 조준 방향은 표시하지 않는다.
+- 표시 대상: 내 위치(파란 사각형), 현재 카메라 영역(흰 사각형), 에어드랍(주황 사각형, 방 전체의 정확한 위치), **에어드랍 투하 예정 위치**(주황 테두리 원 + 남은 초 `0:25`, 6.4), 파괴 가능한 엄폐물(빨강, 정적 표시). 다른 플레이어와 조준 방향은 표시하지 않는다.
 - 조작: **휠로 1~8배 줌**(마우스가 가리키는 지점 고정), **좌클릭 드래그로 이동**. 맵이 열려 있는 동안 사격하지 않는다.
+
+### 3.6 파괴 가능한 엄폐물
+
+| 항목 | 규칙 |
+|---|---|
+| 정의 | BMP 빨강 칸 묶음 1개 = 엄폐물 1개(3.3). 체력 10~100(색으로 지정). 방마다 상태를 따로 가진다 |
+| 멀쩡할 때 | 이동·총알 차단(벽과 같음). 높이 2.0m 상자 |
+| 피해 | 탄(산탄 1개)이 맞으면 그 무기의 데미지만큼 체력 감소. 탄은 엄폐물에서 멈춘다. 판정은 사수 클라가 보고하고 서버가 검증(11.3) |
+| 파괴 | 체력 0 → **반 블럭 상태**: 높이 1.0m, 낮은 엄폐물처럼 이동은 막고 총알은 통과 |
+| 재생 | 파괴 시각 + `cover_regen_ms`(30초) 뒤 체력 최대로 복구. 그 순간 엄폐물 칸에 플레이어가 겹쳐 있으면 비켜설 때까지 대기(반 블럭도 이동을 막으므로 보통은 생기지 않음) |
+| 표시 | 맞으면 그 위에 체력 바 3초. 파괴된 동안 그 위에 **재생 게이지**(막대, 남은 초): 서버가 알려준 파괴 시각을 기준으로 클라가 1초마다 갱신. 30초가 지나도 재생되지 않으면 게이지가 찬 채로 '대기' |
+| 동기화 | 체력 변화는 엄폐물 주변 3×3 플레이어에게(`SC_COVER_HP`), 파괴·재생은 방 전체에(`SC_COVER_STATE`). 입장 시 파괴된 엄폐물 목록을 받는다 |
+| 이동 판정 | 멀쩡·반 블럭 모두 이동을 막으므로 이동 검증·클라 충돌·더미 이동은 상태와 무관하다 |
 
 ---
 
@@ -176,7 +202,7 @@ flowchart LR
 | 3 | 붕대 사용 (6.2) |
 | F (누르고 있기) | 가방·에어드랍 열기 (6.3) |
 | M / Esc | 전체 맵 열기·닫기 (3.5) |
-| `[` / `]` | 카메라 줌인 / 줌아웃 (3.2) |
+| `[` / `]` | 카메라 줌인 / 줌아웃 (디버그, 화면 안내 없음, 3.2) |
 | F3 | 레이턴시 표시 토글 |
 
 ### 4.2 구르기 (Space)
@@ -284,14 +310,15 @@ flowchart LR
 
 | 항목 | 규칙 |
 |---|---|
-| 주기 | 방마다 `airdrop_interval_ms`(2분). 방에 플레이어가 있는 동안만 타이머가 돈다 |
-| 즉시 생성 | 빈 방(0명)에 첫 플레이어가 들어오면 그 순간 1회차를 생성하고 주기 타이머를 그때부터 시작. 방이 비면 타이머 정지(남은 에어드랍은 유지) |
+| 주기 | 방마다 `airdrop_interval_ms`(1분). 방에 플레이어가 있는 동안만 타이머가 돈다 |
+| 예고 | 투하 `airdrop_notice_ms`(30초) 전에 그 회차의 개수·위치를 정하고 방 전체에 `SC_AIRDROP_FORECAST`(투하 시각 + 위치들) 송신. 클라는 전체 맵에 예정 위치와 남은 초를 표시하고, 받은 투하 시각을 기준으로 1초마다 갱신한다. 정해진 위치·개수는 투하 시각에 그대로 생성(그 사이 인원 변화와 무관). 방이 비면 예고 취소 |
+| 즉시 생성 | 빈 방(0명)에 첫 플레이어가 들어오면 그 순간 1회차를 예고 없이 생성하고 주기 타이머를 그때부터 시작. 방이 비면 타이머 정지(남은 에어드랍은 유지) |
 | 최대 개수(방마다) | `min(airdrop_max(4), ceil(방 인원 / airdrop_players_per(30)))`, 최소 1 → 1~30명 1개, 31~60명 2개, 61~90명 3개, 91명 이상 4개 |
-| 회차당 개수 | 남은 자리(최대 - 현재)가 1 이상이면 1~남은 자리 중 균등 무작위, 0이면 건너뜀 |
-| 위치 | 하나씩 배치: 모든 3×3 섹터 묶음(가운데 섹터 기준) 중 살아있는 인원이 가장 많은 묶음(동점 무작위), 기존 에어드랍 섹터와 체비셰프 거리 3 미만인 묶음 제외. 가운데 섹터 안 무작위 빈 자리 |
+| 회차당 개수 | 예고 시점의 남은 자리(최대 - 현재)가 1 이상이면 1~남은 자리 중 균등 무작위, 0이면 그 회차는 예고·투하 없음 |
+| 위치 | 예고 시점에 하나씩 배치: 모든 3×3 섹터 묶음(가운데 섹터 기준) 중 살아있는 인원이 가장 많은 묶음(동점 무작위), 기존·예정 에어드랍 섹터와 체비셰프 거리 3 미만인 묶음 제외. 가운데 섹터 안 무작위 빈 자리 |
 | 내용물 | 특수 무기 무작위 1종(최대 내구도) + 붕대 5개. 여는 시간 2초 |
 | 제거 | 누군가 **특수 무기를 가져가면 즉시 제거**(남은 붕대도 사라짐). 붕대만 가져가면 비었을 때 제거 |
-| 알림 | 생성 시 방 전체에 `SC_AIRDROP(IsNew=1)` → 화면 상단 공지 "에어드랍 투하! 구역 N" 6초. 입장한 플레이어는 기존 에어드랍을 `SC_AIRDROP(IsNew=0)`로 받는다. 시야와 무관하게 방 전체가 알고 전체 맵에 정확한 위치 표시 |
+| 알림 | 생성 시 방 전체에 `SC_AIRDROP(IsNew=1)` → 화면 상단 공지 "에어드랍 투하!" 6초(위치 표기 없음, 위치는 전체 맵에서 확인). 입장한 플레이어는 기존 에어드랍을 `SC_AIRDROP(IsNew=0)`로 받는다. 시야와 무관하게 방 전체가 알고 전체 맵에 정확한 위치 표시 |
 | 표시 | 주황색(월드 상자·신호 기둥, 전체 맵 마커, 공지 배경, 루팅 창 테두리) |
 
 ### 6.5 가방
@@ -306,12 +333,12 @@ flowchart LR
 
 ### 7.1 입장
 1. 타이틀에서 이름 입력 → WebSocket 접속 → `CS_ENTER_GAME`.
-2. 서버가 방 배정 후 본인에게 입장 시퀀스(8.5) 송신, 주변(3×3) 플레이어에게 `SC_CREATE_CHARACTERS`(신규 1명).
+2. 서버가 방 배정·스폰 위치 결정(3장) 후 본인에게 입장 시퀀스(8.5) 송신, 주변(3×3) 플레이어에게 `SC_CREATE_CHARACTERS`(신규 1명, `Flags`의 스폰 비트 = 1 → 스폰 이펙트).
 3. 클라는 입장 직후 `CS_PING`을 200ms 간격 3회 보내 시각 동기화를 수렴시키고 `CS_HEARTBEAT` 60초 타이머를 시작한다.
 
 ### 7.2 전투 / 피격 (오토타게팅 + 과거 위치)
 - 사수 클라는 발사 시 **발사 방향 벡터**와 **ViewTime**(= 자신이 화면에 그리고 있던 원격 캐릭터들의 서버 시각, 9.2)을 `CS_FIRE`로 보낸다.
-- 사수 클라가 탄(산탄 각각)을 로컬 시뮬레이션하고 원격 캐릭터와의 충돌을 판정한다.
+- 사수 클라가 탄(산탄 각각)을 로컬 시뮬레이션하고 원격 캐릭터·멀쩡한 파괴 가능 엄폐물과의 충돌을 판정한다. 엄폐물에 맞으면 탄은 멈추고 엄폐물 피격으로 보고한다.
 - 충돌 시 즉시 히트 마커(예측)를 보여주고 보고 목록에 적재 → 첫 항목 후 100ms 또는 29건이 차면 `CS_HIT_REPORT`로 일괄 송신.
 - 서버는 **ViewTime + 탄 비행 시간** 시점의 대상 위치를 위치 이력에서 복원해 충돌 지점과 비교한다(11.3).
 - **HP 감소는 서버의 `SC_DAMAGE`로만 반영**(예측하지 않음).
@@ -354,7 +381,7 @@ flowchart LR
 - 시각: `UINT32` **서버 시각(ms)** = 서버 프로세스 시작 기준 경과 ms (`GameProtocol.h`의 `GetServerTimeMs()`, 49일 wrap 허용, 비교는 부호 있는 차이로).
 - PlayerID: UINT32, 방 내 고유, 1부터 증가(0 = 없음). **sessionHandle은 클라에 노출하지 않는다.**
 - 패킷 타입 범위: C→S `3000~3099`, S→C `3100~3199` (`server/GameServer/GameProtocol.h`, 클라 `NetProtocol.cs`). 서버 C++ 상수는 `PT_` 접두사(`PT_SC_MOVE` 등, windows.h 매크로 충돌 회피).
-- 프로토콜 버전: `GAME_PROTOCOL_VERSION = 6`. 버전이 다르면 입장 거부(`VERSION_MISMATCH`).
+- 프로토콜 버전: `GAME_PROTOCOL_VERSION = 7`. 버전이 다르면 입장 거부(`VERSION_MISMATCH`).
 
 ### 8.2 패킷 목록
 
@@ -382,6 +409,7 @@ flowchart LR
 | 3113 | SC_PONG | S→C | 본인 | 10 | |
 | 3114 | SC_PLAYER_COUNT | S→C | 방 전체 | 6 | |
 | 3006~3010, 3115~3121 | 아이템·구르기·컨테이너 | | | 8.5 | |
+| 3122~3124 | 파괴 가능 엄폐물·에어드랍 예고 | | | 8.5 | |
 
 ### 8.3 Client → Server
 
@@ -421,7 +449,7 @@ CS_HIT_REPORT (3003)                         // 누적 피격 보고
     {
         UINT32  ShotSeq
         BYTE    PelletIndex                  // 0..Pellets-1
-        UINT32  TargetID
+        UINT32  TargetID                     // 플레이어 ID, 또는 0x80000000 | CoverId (파괴 가능 엄폐물 피격)
         float   HitX, HitZ                   // 클라가 판정한 충돌 지점
     } [Count]
 }
@@ -496,7 +524,7 @@ SC_CREATE_CHARACTERS (3102)    // 시야 진입 / 입장 시 주변 목록. 9명
         float   AimAngle
         WORD    HP, MaxHP
         BYTE    WeaponID
-        BYTE    _reserved
+        BYTE    Flags          // bit0 = 방금 스폰함(스폰 이펙트 재생)
     } [Count]                  // 54B each
 }
 
@@ -615,8 +643,11 @@ SC_PLAYER_COUNT (3114)         // 서버 전체 접속 인원 (모든 방 합계
 | 3119 | SC_CONTAINER_DELETE | S→C 3×3·방 전체(에어드랍) | BYTE Count, UINT32 Id[n] | 3 + 4n |
 | 3120 | SC_CONTAINER_CONTENTS | S→C 연 사람 | UINT32 Id, BYTE SpecialWeaponId, WORD Durability, BYTE Bandages | 10 |
 | 3121 | SC_AIRDROP | S→C 방 전체 | UINT32 Id, float X, Z, BYTE SectorX, SectorY, BYTE IsNew | 17 |
+| 3122 | SC_COVER_HP | S→C 엄폐물 3×3 | WORD CoverId, BYTE Hp (0이면 곧 SC_COVER_STATE) | 5 |
+| 3123 | SC_COVER_STATE | S→C 방 전체 | BYTE Count, {WORD CoverId, BYTE Destroyed(1 파괴 / 0 재생), UINT32 DestroyedAtMs(서버 시각), WORD RegenSec}[n] (n ≤ 56) | 3 + 9n |
+| 3124 | SC_AIRDROP_FORECAST | S→C 방 전체 | UINT32 DropAtMs(서버 시각), BYTE Count(0 = 예고 없음), {float X, Z}[n] | 7 + 8n |
 
-**입장 시퀀스**(본인에게, 이 순서): `SC_ENTER_GAME` → `SC_PLAYER_COUNT` → `SC_WEAPON_DEFS` → `SC_INVENTORY` → `SC_CREATE_CHARACTERS`(시야 안 플레이어) → `SC_CONTAINER_CREATE`(시야 안 가방) → `SC_AIRDROP`(기존 에어드랍, IsNew=0) → `SC_RANKING_TOP3`.
+**입장 시퀀스**(본인에게, 이 순서): `SC_ENTER_GAME` → `SC_PLAYER_COUNT` → `SC_WEAPON_DEFS` → `SC_INVENTORY` → `SC_CREATE_CHARACTERS`(시야 안 플레이어) → `SC_CONTAINER_CREATE`(시야 안 가방) → `SC_AIRDROP`(기존 에어드랍, IsNew=0) → `SC_AIRDROP_FORECAST`(예고 중이면) → `SC_COVER_STATE`(파괴된 엄폐물 전부) → `SC_RANKING_TOP3`.
 
 ### 8.6 사격·피격 시퀀스
 
@@ -675,11 +706,11 @@ sequenceDiagram
 |---|---|---|
 | `GameServer` | `NetLib_Server` | 설정 로드, `EntryContent` 1개 + `BattleContent` N개 생성·등록. `OnConnectionRequest`→true, `OnClientJoin`→`Move_Content(entry)`. 생성자 `opt_encryption = nullptr` |
 | `EntryContent` | `NetLib_Content` (tick 50ms) | `CS_ENTER_GAME` 대기(10초), 버전·이름 검증, 방 선택, `GamePlayer` 생성 후 `Move_Content(room, h, player)` |
-| `BattleContent` | `NetLib_Content` (tick 33ms) | 방 1개. 플레이어·섹터·랭킹·전투 판정·아이템·컨테이너·에어드랍 전부 소유. 방마다 단일 스레드 |
+| `BattleContent` | `NetLib_Content` (tick 33ms) | 방 1개. 플레이어·섹터·랭킹·전투 판정·아이템·컨테이너·에어드랍·파괴 가능 엄폐물 상태 전부 소유. 방마다 단일 스레드 |
 | `GamePlayer` | – | 플레이어 상태, 인벤토리, 위치 이력·사격 기록 링, 위반 카운터. 방 입장·퇴장 시 new/delete |
 | `PositionHistory` | – | 고정 링버퍼 64개 `{timeMs, x, z, vx, vz}`, `PosAt(t)` (10.5) |
 | `SectorMap` | – | 섹터 30×30(50m)별 플레이어 목록, 3×3 조회·diff |
-| `ObstacleMap` | – | `ObstacleMap.h/.cpp`(NetLib 의존 없음, DummyClient도 함께 컴파일). BMP 로드, 칸 조회, `CircleBlocked`, `SegmentBlocked`(DDA, 이동/총알 모드), `FindFree`, `Hash`. 불변 전역, 락 없이 읽음 |
+| `ObstacleMap` | – | `ObstacleMap.h/.cpp`(NetLib 의존 없음, DummyClient도 함께 컴파일). BMP 로드, 칸 조회, 파괴 가능 엄폐물 목록(칸 묶음·최대 체력·칸→id), `CircleBlocked`, `SegmentBlocked`(DDA, 이동/총알 모드, 총알은 방의 파괴 상태를 받아 판정), `FindFree`, `Hash`. 불변 전역, 락 없이 읽음 |
 | `WeaponTable` | – | `weapons.txt` 로드, 불변 전역 |
 | `GameLogBuffer` | – | 게임 로그 메모리 버퍼(200줄) + 파일 기록 (11.5) |
 
@@ -712,7 +743,7 @@ sequenceDiagram
 
 **OnUpdate**
 - 1초마다 하트비트 타임아웃 검사, DEAD 후 3초 지난 세션 끊음.
-- 이동 예산·사격 토큰 충전(11.1, 11.2), 붕대 타이머, 가방 만료, 에어드랍 회차(6.4).
+- 이동 예산·사격 토큰 충전(11.1, 11.2), 붕대 타이머, 가방 만료, 에어드랍 예고·투하(6.4), 파괴된 엄폐물 재생(3.6, 0.5초마다).
 - 정지 중인 플레이어는 마지막 이력 기록이 200ms 넘었으면 현재 위치를 이력에 한 번 더 기록.
 - `rankingDirty`면 `SC_RANKING_TOP3` 방 전체, 접속 인원 변경 시 `SC_PLAYER_COUNT`(최소 200ms 간격 병합).
 
@@ -757,22 +788,30 @@ sequenceDiagram
 | character_radius / max_hp | 0.5 / 100 | |
 | max_rewind_ms / hit_tolerance | 500 / 1.0 | |
 | default_weapon_id | 1 | 기본 무기 |
-| weapons_file / spawns_file | weapons.txt / spawns.txt | |
+| weapons_file | weapons.txt | |
 | obstacle_map | `../../map/obstacles.bmp` | `server/GameServer` 기준. 못 읽으면 경고 후 엄폐물 없이 실행 |
-| spawn_offset_radius | 20 | |
-| airdrop_interval_ms / airdrop_max / airdrop_players_per | 120000 / 4 / 30 | 6.4 |
+| airdrop_interval_ms / airdrop_notice_ms / airdrop_max / airdrop_players_per | 60000 / 30000 / 4 / 30 | 6.4 (예고 시간이 주기보다 길면 주기만큼) |
+| cover_regen_ms | 30000 | 3.6 |
 | bag_lifetime_ms | 30000 | 6.5 |
 | start_bandages / max_bandages / bandage_heal / bandage_ms | 2 / 5 / 30 / 2000 | 6.2 |
 | roll_ms / roll_speed_mult / roll_cooldown_ms | 250 / 3.0 / 3000 | 4.2 |
 | interact_range / bag_open_ms / airdrop_open_ms | 2.5 / 1000 / 2000 | 6.3 |
-| test_mode / test_spawn_sector_x / test_spawn_sector_y | false / 0 / 0 | 3장 |
+| test_mode / test_spawn_sector_x / test_spawn_sector_y / test_spawn_radius | false / 0 / 0 / -1 | 3장. 반경 -1 = 섹터 전체, 0 = 섹터 중심, >0 = 중심에서 그 반경 안 |
 
 클라는 구르기·붕대·상호작용 수치를 서버에서 받지 않고 `GameSession` 상수로 같은 값을 가진다(16장 열린 이슈 10).
 
 ### 10.7 작업 폴더 자동 맞춤
 
-- 서버는 작업 폴더에 `game_config.txt`가 없으면 실행 파일 폴더, 그 위, 그 위의 위 순서로 찾아 **처음 발견한 폴더로 작업 폴더를 옮긴다**(콘솔에 `working directory -> ...`). 따라서 `x64\Release\GameServer.exe`를 직접 실행해도 `server/GameServer` 기준 상대 경로(맵·무기·스폰·로그)가 맞는다.
+- 서버는 작업 폴더에 `game_config.txt`가 없으면 실행 파일 폴더, 그 위, 그 위의 위 순서로 찾아 **처음 발견한 폴더로 작업 폴더를 옮긴다**(콘솔에 `working directory -> ...`). 따라서 `x64\Release\GameServer.exe`를 직접 실행해도 `server/GameServer` 기준 상대 경로(맵·무기·로그·덤프)가 맞는다.
 - 더미 클라이언트도 같은 방식으로 `dummy_config.txt`를 찾는다(17.5).
+
+### 10.8 크래시 덤프
+
+- 서버와 더미 클라이언트는 `server/ContentEchoServer/Utils/CrashDump.h`(NetLib 유틸)를 쓴다. 프로그램 시작 시 정적 객체가 처리기를 등록한다.
+- 잡는 예외: 처리되지 않은 SEH 예외(접근 위반 등, `SetUnhandledExceptionFilter`), CRT 잘못된 인자·순수 가상 호출·CRT 보고, `abort()`(SIGABRT), `std::terminate`(처리되지 않은 C++ 예외 포함).
+- 덤프 파일: 작업 폴더 `dumps/Dump_YYYYMMDD_HHMMSS_<pid>.dmp`, 전체 메모리 덤프(`MiniDumpWithFullMemory`). 같은 날 여러 번 죽어도 덮어쓰지 않는다. 한 프로세스에서 덤프는 한 번만 쓴다(동시에 여러 스레드가 죽어도).
+- 덤프 직전에 등록된 콜백을 호출한다: 서버는 게임 로그(11.5)에 `[crash] exception 0x<코드> -> dumps/...` 한 줄을 남긴다(로그 잠금을 기다리지 않음). 더미는 이벤트 로그에 `CRASH`를 남긴다.
+- 덤프 분석: Visual Studio로 `.dmp`를 열고 같은 빌드의 `.pdb`(x64\Release)를 기호 경로에 둔다.
 
 ---
 
@@ -812,9 +851,17 @@ sequenceDiagram
 6. **거리**: `|Hit - S.Origin| ≤ W.Range + W.ProjectileRadius`.
 7. **각도**: `Hit - S.Origin`과 `S.Dir` 사이 각 `≤ W.SpreadDeg / 2 + 3°` (거리 < 2면 생략).
 8. **과거 위치**: `tHit = S.ViewTime + dist / W.ProjectileSpeed × 1000`, `P = T.history.PosAt(tHit)`(판정 불가면 거부), `|Hit - P| ≤ CharacterRadius + W.ProjectileRadius + hit_tolerance`.
-9. **엄폐**: `S.Origin → Hit` 선분이 벽 칸을 지나면 거부(총알 모드 — 낮은 엄폐물 통과).
+9. **엄폐**: `S.Origin → Hit` 선분이 벽 칸이나 멀쩡한 파괴 가능 엄폐물 칸을 지나면 거부(총알 모드 — 낮은 엄폐물·반 블럭 통과).
 
 모두 통과 → `T.HP -= W.Damage`, `SC_DAMAGE`. 한 패킷 안에서 앞 항목으로 대상이 죽었으면 뒤 항목은 4번에서 걸린다.
+
+**파괴 가능 엄폐물 피격**(`TargetID = 0x80000000 | CoverId`): 1·2·5·6·7번은 위와 같고, 이어서
+- 같은 (ShotSeq, PelletIndex)로 이미 엄폐물을 맞췄으면 거부(탄은 엄폐물에서 멈춤, `hit:dup-target`).
+- CoverId가 맵에 없으면 `hit:value`. 이미 파괴된 엄폐물이면 세지 않는 거부.
+- 엄폐물이 사수의 시야(3×3) 밖이면 세지 않는 거부.
+- 충돌 지점이 엄폐물 칸에서 `ProjectileRadius + 0.75m` 넘게 떨어져 있으면 `hit:position`.
+- `S.Origin → Hit` 선분이 벽이나 그 엄폐물이 아닌 다른 멀쩡한 파괴 가능 엄폐물을 지나면 `hit:wall`.
+- 통과 → 엄폐물 체력 -= `W.Damage`, 주변 3×3에 `SC_COVER_HP`. 0이 되면 파괴(3.6), 방 전체에 `SC_COVER_STATE`.
 
 **세지 않는 거부**(정상 플레이에서도 생김, `ignored-hit`로만 집계): 대상이 이미 죽음·퇴장(4), 시야 밖(4), 보고 시한 초과(5), 대상 이력이 아직 없는 시각(8), 사격 기록이 없지만 seq ≤ 마지막 사격(서버가 거부했거나 오래된 사격). 그 밖의 거부(보낸 적 없는 미래 seq 포함)는 부정 카운트(11.4).
 
@@ -856,7 +903,7 @@ sequenceDiagram
 ### 11.5 게임 로그
 
 - 서버 게임 로그는 메모리(200줄, 대시보드 하단 최근 10줄)와 **파일** `syslogs/game_YYYYMMDD_HHMMSS.log`(작업 폴더 기준, 실행마다 새 파일, 다른 프로그램이 읽는 중에도 기록 가능)에 남는다.
-- 기록 항목: 방·입장 시작, 입장 거부, 무기표 경고, 스폰 위치 실패, 에어드랍 생성·건너뜀, 킥 상세. 플레이어 입장·퇴장(정상 종료)은 기록하지 않는다.
+- 기록 항목: 방·입장 시작, 입장 거부, 무기표 경고, 스폰 위치 실패, 에어드랍 예고·생성·건너뜀, 킥 상세, 크래시(10.8). 플레이어 입장·퇴장(정상 종료)은 기록하지 않는다.
 - **킥 상세** 한 줄:
   `[room <n>] kick player <id> CHEAT_SUSPECT: move <기간 내 횟수>/5s last <종류>, cheat <횟수>/10s last <종류> | <종류별 누적> | ignored-hit <세지 않은 거부 수>, in-game <ms>`
 
@@ -907,7 +954,9 @@ UI는 IMGUI(`UiKit`). 한글 표시를 위해 `Assets/Resources/Fonts/NotoSansKR
 | `CharacterView` / `DustPuff` | 캐릭터 외형(캡슐+총), 구르기 회전 연출 / 먼지 잔상 |
 | `Projectile` | 로컬 탄: 이동 + 원격 캐릭터 충돌 판정 → HitReporter. 관찰자 탄: 연출만. 둘 다 벽에서 소멸 |
 | `HitReporter` | 보고 버퍼, 첫 항목 후 100ms 또는 29건 시 flush |
-| `ContainerManager` | 가방·에어드랍 표시, F 게이지, 루팅 창 상태 |
+| `ContainerManager` | 가방·에어드랍 표시, 에어드랍 예고, F 게이지, 루팅 창 상태 |
+| `CoverManager` | 파괴 가능 엄폐물 상자 생성(씬 `Covers`), 파괴·재생 상태와 높이, 체력 바·재생 게이지 정보 |
+| `SoundManager` / `SpawnEffect` | 효과음 재생(거리 감쇠·팬) / 스폰 이펙트 (12.4) |
 | `GameController` | 패킷 처리 전반, 로컬 플레이어·카메라 구성, 끊김 시 타이틀 복귀 |
 | `CameraRig` | 정사영 사선 카메라, `[` `]` 줌 |
 | `WeaponRegistry` | `SC_WEAPON_DEFS` 수치 + 로컬 표현 결합 |
@@ -928,9 +977,28 @@ UI는 IMGUI(`UiKit`). 한글 표시를 위해 `Assets/Resources/Fonts/NotoSansKR
 | 우상단 | 상위 3위 패널 |
 | 하단 | HP 바, 내 점수/킬 |
 | 하단 가운데 | 슬롯 바(1 특수 무기 이름·내구도 / 2 기본 무기 / 3 붕대 개수·+30), 붕대 진행 게이지 |
-| 하단 오른쪽 | 조작법: 키캡(W A S D, Shift, Space, 1 2 3, F, M, `[` `]`)과 마우스 그림(왼쪽 버튼 사격, 이동 조준). 눌린 입력은 반투명, Space에 구르기 쿨타임 원형 |
-| 월드 위 | 히트 마커, 상호작용 문구·원형 게이지, 조준선 |
-| 화면 중앙 | 루팅 창(6.3), 전체 맵(3.5) |
+| 하단 오른쪽 | 조작법: 키캡(W A S D, Shift, Space, 1 2 3, F, M)과 마우스 그림(왼쪽 버튼 사격, 이동 조준, 휠 지도 줌). 눌린 입력은 반투명, Space에 구르기 쿨타임 원형. 디버그 줌 `[` `]`은 표시하지 않는다 |
+| 월드 위 | 히트 마커, 상호작용 문구·원형 게이지, 조준선, 파괴 가능 엄폐물의 체력 바(맞은 뒤 3초)·재생 게이지(파괴된 동안, 남은 초) |
+| 화면 중앙 | 루팅 창(6.3), 전체 맵(3.5, 에어드랍 예정 위치·남은 초 포함) |
+
+### 12.4 연출 · 사운드
+
+**스폰 이펙트** (`SpawnEffect`): 스폰 위치에 하늘색 반투명 빛 기둥이 내려앉고 바닥에 링이 퍼지며 약 1초 뒤 사라진다. 스폰 소리. 로컬은 입장 직후, 원격은 `SC_CREATE_CHARACTERS`의 스폰 비트가 1일 때(시야 진입은 0).
+
+**사운드** (`SoundManager`, `Resources/Audio/*.wav` — 스크립트로 합성한 효과음, 같은 이름으로 교체 가능)
+
+| 소리 | 파일 | 재생 시점 | 음량 |
+|---|---|---|---|
+| 권총 / 샷건 / 저격총 발사 | `sfx_pistol`, `sfx_shotgun`, `sfx_sniper` | 내 발사(로컬 즉시), 다른 사람 발사(`SC_FIRE`) | 내 것 최대, 다른 사람은 거리 감쇠 |
+| 명중 | `sfx_hit` | 내가 쏜 탄의 피해가 서버에서 확인됨(`SC_DAMAGE`, 공격자 = 나) | 최대 |
+| 피격 | `sfx_hurt` | 내가 피해를 입음(`SC_DAMAGE`, 피해자 = 나) | 최대 |
+| 처치 | `sfx_kill` | 내가 적을 처치(`SC_PLAYER_DIE`, 처치자 = 나) | 최대 |
+| 엄폐물 피격 / 파괴 | `sfx_cover_hit`, `sfx_cover_break` | 내 탄이 엄폐물에 맞음 / 엄폐물 파괴(`SC_COVER_STATE`) | 피격 최대, 파괴는 거리 감쇠 |
+| 스폰 | `sfx_spawn` | 스폰 이펙트와 함께 | 거리 감쇠 |
+
+- **거리 감쇠**: 거리 d(m)에서 음량 = 1 (d ≤ 10), `1 − log10(d / 10)` (10 < d < 100), 0 (d ≥ 100). 브로드캐스트 범위(3×3 섹터) 밖의 소리는 오지 않는다.
+- **방향감**: 카메라 오른쪽 방향 기준으로 소리 위치가 왼쪽/오른쪽이면 스테레오 팬 최대 ±0.8 (`팬 = clamp(가로 거리 / 30, −0.8, 0.8)`).
+- 같은 소리가 한 프레임에 여러 번 오면(산탄 등) 한 번만 재생하고, 동시에 재생되는 소리는 최대 16개.
 
 ---
 
@@ -1062,7 +1130,8 @@ UI는 IMGUI(`UiKit`). 한글 표시를 위해 `Assets/Resources/Fonts/NotoSansKR
 | 파일 | 용도 |
 |---|---|
 | `bot_test.js` + `test/run` | 입장·이동·사격·피격·사망·랭킹·위반 카운트(늦은 명중 보고는 킥 없음, 미래 seq 보고는 킥) 시나리오 |
-| `item_test.js` + `test/item` | 무기표·인벤토리·전환·붕대·구르기·가방(생성·열기·획득·만료)·에어드랍(즉시 생성·인원 비례 최대 개수·위치 규칙·동시 열기·특수 무기 획득 시 제거)·특수 무기 사격. 설정: 에어드랍 짧은 주기, `airdrop_players_per` 1, 가방 8초 |
+| `item_test.js` + `test/item` | 무기표·인벤토리·전환·붕대·구르기·가방(생성·열기·획득·만료)·에어드랍(즉시 생성·예고·인원 비례 최대 개수·위치 규칙·동시 열기·특수 무기 획득 시 제거)·특수 무기 사격. 설정: 에어드랍 짧은 주기, `airdrop_players_per` 1, 가방 8초 |
+| `cover_test.js` + `test/cover` | 파괴 가능 엄폐물(입장 시 상태, 피격·체력 방송, 파괴·재생, 파괴 전 관통 거부·파괴 후 통과, 잘못된 보고)·스폰 규칙. 테스트용 BMP를 직접 만든다(`node cover_test.js make`) |
 | `obstacle_test.js` | 엄폐물 검증. `make`로 테스트 BMP 생성 → 서버 실행 → `run` |
 | `wander_bot.js` | 배회 봇 |
 | `ws_enter_test.js` | 웹서버 `/ws` 경유 입장 테스트. `node ws_enter_test.js ws://<주소>:8090/ws [이름] [동시수]` |
@@ -1095,7 +1164,7 @@ UI는 IMGUI(`UiKit`). 한글 표시를 위해 `Assets/Resources/Fonts/NotoSansKR
 
 | 항목 | 내용 |
 |---|---|
-| 구현 | C++ Windows IOCP 콘솔(`DummyClient.sln`, Release x64). 서버 `GameProtocol.h`·`ObstacleMap.cpp` 공유 |
+| 구현 | C++ Windows IOCP 콘솔(`DummyClient.sln`, Release x64). 서버 `GameProtocol.h`·`ObstacleMap.cpp` 공유. 크래시 덤프(10.8) |
 | 작업 폴더 | `server/DummyClient` 기준. exe를 직접 실행해 `dummy_config.txt`가 없으면 실행 파일 위쪽 폴더에서 찾아 옮긴다(시작 시 `작업 폴더 -> ...`) |
 | 맵 확인 | 엄폐물 맵을 못 읽거나 서버 `MapHash`와 다르면 대시보드 `[경고]` 줄과 이벤트 로그 `MAP_MISMATCH`(1회). 이 상태의 더미는 `move:blocked`로 킥될 수 있다 |
 | 닉네임 | `dummy_names.txt`(UTF-8, 한 줄 하나, 한글·영문 300개, 12자 이내)를 섞어 차례로 사용. 더미가 목록보다 많으면 목록 이름 + 번호. 파일이 없으면 `Dummy<번호>`. 서버는 더미를 구분하지 않는다 |
@@ -1104,11 +1173,12 @@ UI는 IMGUI(`UiKit`). 한글 표시를 위해 `Assets/Resources/Fonts/NotoSansKR
 | 강도 | 더미마다 약함 w ∈ [`weakness_min`, `weakness_max`](0~1)를 한 번 뽑아 연동: 반응 지연 `reaction_base_ms`(300) × w, 사격 간격 × 1.1 × (1 + w), 조준 오차 ±`aim_error_max_deg`(8°) × w, 리드 사격 확률 1 - w |
 | 구르기 | 교전 중 쿨타임 후 초당 30% 확률로 적의 옆 방향, 배회 중 쿨타임마다 10% 확률로 진행 방향 |
 | 에어드랍 | 교전 중이 아니고 특수 무기가 없으며 `loot_range`(50m) 안에 에어드랍이 있으면 걸어가서 1.5m 안에서 멈추고 `airdrop_open_ms` + 300ms 뒤 `CS_OPEN_CONTAINER` → 특수 무기가 있으면 `CS_TAKE_ITEM` → 얻으면 즉시 1번 장착해 사용(내구도 0이면 권총). 30초 안에 못 열면 포기 |
+| 파괴 가능 엄폐물 | 상태를 추적하지 않고 항상 총알을 막는 것으로 본다(시야선이 있을 때만 쏘므로 엄폐물을 쏘지 않음). 이동은 상태와 무관하게 막힘 |
 | 미사용 | 붕대, 가방 |
 | 사망 | 재접속(인원 유지) / 퇴장. 설정 `death_mode` 또는 실행 중 `M` |
 | 조작 | 시작 시 인원 입력, `C` 인원 변경, `+`/`-` 100명, `M` 사망 모드, `F` 사격, `Q` 종료 |
 | 무인 실행 | `DummyClient.exe --count N --duration 초 [--server ip:port] [--config 파일] [--leave] [--nofire]` → 5초마다 통계 한 줄 |
-| 이벤트 로그 | `logs/dummy_YYYYMMDD_HHMMSS.log`: 게임 중 비정상 끊김(`DISCONNECT`), 입장 실패(`ENTER_FAIL`), 접속 실패(`CONNECT_FAIL`), `MAP_MISMATCH` |
+| 이벤트 로그 | `logs/dummy_YYYYMMDD_HHMMSS.log`: 게임 중 비정상 끊김(`DISCONNECT`), 입장 실패(`ENTER_FAIL`), 접속 실패(`CONNECT_FAIL`), `MAP_MISMATCH`, `CRASH` |
 | 대시보드 | 상태별 인원, 접속·입장 결과, 송수신, RTT, 사격·명중·사망·구르기·특수 무기 획득, 위치 보정·킥(0이 아니면 검증 문제), 맵 경고, 클라 CPU·메모리 |
 
 `dummy_config.txt` 주요 키: `server_ip`/`server_port`, `count`, `max_dummies`(20000), `io_threads`/`logic_threads`, `tick_ms`(50), `connect_per_sec`(300), `death_mode`, `reconnect_delay_ms`, `fire`, `engage_range`(60), `sprint_chance`(0.3), `weakness_min`/`weakness_max`, `reaction_base_ms`, `aim_error_max_deg`, `roll`, `roll_combat_per_sec`, `roll_wander_chance`, `roll_cooldown_ms`/`roll_ms`/`roll_speed_mult`, `names_file`(dummy_names.txt), `name_prefix`(Dummy), `loot`(true), `loot_range`(50), `airdrop_open_ms`(2000), `obstacle_map`(`../../map/obstacles.bmp`).
@@ -1118,6 +1188,7 @@ UI는 IMGUI(`UiKit`). 한글 표시를 위해 `Assets/Resources/Fonts/NotoSansKR
 ---
 
 ## 변경 이력
+- v0.14 (2026-10-01): 크래시 덤프(서버·더미, `dumps/`), 스폰을 주변 인원 최소 섹터의 무작위 위치로(고정 스폰 제거), 스폰 이펙트, 효과음(발사·명중·피격·처치·엄폐물·스폰, 거리 감쇠), 파괴 가능한 엄폐물(BMP 빨강, 체력 10~100, 반 블럭·30초 재생·게이지, 예시 맵 3,000개), 에어드랍 1분 주기·30초 전 예고(전체 맵 위치·남은 초)·공지에서 위치 제거, 조작 안내에서 `[` `]` 제거. 프로토콜 v7.
 - v0.13 (2026-10-01): 샷건 내구도 40·탄속 130·퍼짐 12°, 저격총 내구도 30, 명칭 "특수 무기"/"기본 무기", 가방 30초, 더미 닉네임 목록 파일, 더미 에어드랍 특수 무기 획득·사용, 서버·더미 작업 폴더 자동 맞춤, 더미 맵 불일치 경고, 게임 로그에서 플레이어 퇴장 제외. 문서를 현재 동작 기준으로 재구성.
 - v0.12 (2026-10-01): 정상 플레이에서 생기는 명중 거부를 부정 카운트에서 제외, 연결 종료 조건·위반 종류·킥 상세 로그, 게임 로그 파일.
 - v0.11 (2026-10-01): 서버 맵 경로 수정, 붕대 30, 에어드랍 2분·인원 비례 최대 개수·첫 입장 즉시 생성·특수 무기 획득 시 제거·주황 표시, IMGUI 글자 잘림 수정.
