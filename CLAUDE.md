@@ -15,7 +15,7 @@ WebGL 빌드 2.5D PvP 슈팅 게임(동시 50인) 클라이언트(`client/`)와 
   - Unity 에셋: `AssetDatabase.MoveAssetToTrash(path)`
 
 ## 구성 (2026-09-30)
-- 게임 명세: 프로젝트 문서 `claude/game-spec.md` (v0.14, 이 저장소의 `GAME_SPEC.md`는 사본). 프로토콜 v7
+- 게임 명세: 프로젝트 문서 `claude/game-spec.md` (v0.15, 이 저장소의 `GAME_SPEC.md`는 사본). 프로토콜 v7
 - 조작: 카메라 줌 `[` `]`은 디버그용(화면 안내 없음), 마우스 휠은 전체 맵(M) 줌 전용. 위치 표기는 구역 번호 1~100(`GameSession.RegionLabel`)
 - 더미 강도: `server/DummyClient/dummy_config.txt`의 `weakness_min/max`, `reaction_base_ms`, `aim_error_max_deg` (명세 17.5)
 - 실행: 저장소 최상단 `start_server.bat` [`build`] [`web`] / `stop_server.bat` (명세 18장). 게임 서버·게이트웨이·WebGL 웹서버를 한 번에 실행, `web`은 브라우저 열기
@@ -24,7 +24,7 @@ WebGL 빌드 2.5D PvP 슈팅 게임(동시 50인) 클라이언트(`client/`)와 
 - 더미 클라이언트: `server/DummyClient/` (C++ IOCP, `DummyClient.sln` Release x64, README 참고). 대규모 테스트 서버 설정: `server/GameServer/test/stress/`
 - `ObstacleMap.h/.cpp`(서버)는 NetLib 의존 없이 유지할 것 — DummyClient가 함께 컴파일한다
 - 게이트웨이: `server/gateway/index.js` (WS 8080 → TCP 10301)
-- 엄폐물 맵: `map/obstacles.bmp` (1픽셀 = 1m, 검정 = 벽, 회색 = 낮은 엄폐물, 빨강 R150~255 = 파괴 가능 엄폐물 체력 10~100). 예시 맵은 `map/generate_example_map.py`. 수정 후 서버 재시작 + Unity `Blockov/Map/Import Obstacles (default BMP)` + WebGL 재빌드. 파괴 가능 엄폐물 상자는 씬 `Covers`(CoverManager)가 실행 시 만든다
+- 엄폐물 맵: `map/obstacles.bmp` (1픽셀 = 1m, 검정 = 벽, 회색 = 낮은 엄폐물, 빨강 R150~255 = 파괴 가능 엄폐물 체력 10~100). 예시 맵은 `map/generate_example_map.py`. 수정 후 서버 재시작 + Unity `Blockov/Map/Import Obstacles (default BMP)` + WebGL 재빌드. 파괴 가능 엄폐물 상자는 씬 `Covers`(CoverManager)가 실행 시 만든다(파괴되면 잔해, 이동·총알 통과 — 서버 이동 검증도 방의 파괴 상태를 따름). 낮은 엄폐물은 줄무늬 텍스처 `Assets/Materials/Arena/T_LowStripes.png`(메시 UV는 임포터가 넣음)
 - 스폰: 고정 지점 없음(주변 3x3 인원이 가장 적은 섹터). 테스트 설정은 `test_mode` + `test_spawn_sector_x/y` + `test_spawn_radius`
 - 효과음: `client/.../Assets/Resources/Audio/*.wav` (`client/escape_from_blockov/Tools/make_sfx.py`로 합성)
 - 크래시 덤프: 서버·더미 모두 작업 폴더 `dumps/` (`Utils/CrashDump.h`)
