@@ -32,6 +32,7 @@ namespace Blockov.Game
             UiKit.Begin();
             var cam = _gc.Rig != null ? _gc.Rig.GetComponent<Camera>() : Camera.main;
 
+            DrawCoverBars(cam);
             DrawNameplates(cam);
             DrawKillFeed();
             DrawTop3();
@@ -51,6 +52,36 @@ namespace Blockov.Game
             if (_gc.ShowMinimap) DrawMinimap(cam);
             if (_gc.ShowDeathResult) DrawDeathResult();
             else if (_gc.LocalDead) DrawCenterMessage("사망했습니다...");
+        }
+
+        // 파괴 가능 엄폐물: 맞은 뒤 3초 체력 바 / 파괴된 동안 재생 게이지(남은 초, 1초 단위) (3.6)
+        void DrawCoverBars(Camera cam)
+        {
+            var cm = _gc.Covers;
+            if (cam == null || cm == null) return;
+            float w = UiKit.Px(54), h = UiKit.Px(7);
+            var lab = UiKit.Sized(UiKit.LabelCenter, 12);
+            foreach (var c in cm.Active)
+            {
+                float top = c.Destroyed ? CoverManager.BrokenHeight : CoverManager.IntactHeight;
+                Vector3 sp = cam.WorldToScreenPoint(new Vector3(c.Center.x, top + 0.4f, c.Center.y));
+                if (sp.z < 0 || sp.x < -w || sp.x > Screen.width + w || sp.y < -h || sp.y > Screen.height + h) continue;
+                var r = new Rect(sp.x - w / 2, Screen.height - sp.y - h, w, h);
+                UiKit.Rect(new Rect(r.x - 1, r.y - 1, r.width + 2, r.height + 2), new Color(0, 0, 0, 0.7f));
+                if (c.Destroyed)
+                {
+                    int remain = CoverManager.RemainingSeconds(c);
+                    float fill = c.RegenSec > 0 ? 1f - (float)remain / c.RegenSec : 1f;
+                    UiKit.Rect(new Rect(r.x, r.y, r.width * Mathf.Clamp01(fill), r.height), new Color(0.4f, 0.75f, 1f, 0.95f));
+                    UiKit.ShadowLabel(new Rect(r.x - UiKit.Px(20), r.y - UiKit.Px(17), r.width + UiKit.Px(40), UiKit.Px(16)),
+                        remain > 0 ? $"재생 {remain}초" : "재생 대기", lab, new Color(0.8f, 0.92f, 1f));
+                }
+                else
+                {
+                    float fill = c.MaxHp > 0 ? (float)c.Hp / c.MaxHp : 0f;
+                    UiKit.Rect(new Rect(r.x, r.y, r.width * fill, r.height), new Color(1f, 0.55f, 0.25f, 0.95f));
+                }
+            }
         }
 
         void DrawNameplates(Camera cam)
@@ -265,7 +296,7 @@ namespace Blockov.Game
         ////////////////////////////////////////////////////////////////
         void DrawControls()
         {
-            bool W = false, A = false, S = false, D = false, shift = false, space = false, k1 = false, k2 = false, k3 = false, f = false, m = false, lb = false, rb = false;
+            bool W = false, A = false, S = false, D = false, shift = false, space = false, k1 = false, k2 = false, k3 = false, f = false, m = false;
             bool lmb = false, moved = false, wheel = false;
 #if ENABLE_INPUT_SYSTEM
             var kb = UnityEngine.InputSystem.Keyboard.current;
@@ -274,7 +305,7 @@ namespace Blockov.Game
                 W = kb.wKey.isPressed; A = kb.aKey.isPressed; S = kb.sKey.isPressed; D = kb.dKey.isPressed;
                 shift = kb.shiftKey.isPressed; space = kb.spaceKey.isPressed;
                 k1 = kb.digit1Key.isPressed; k2 = kb.digit2Key.isPressed; k3 = kb.digit3Key.isPressed;
-                f = kb.fKey.isPressed; m = kb.mKey.isPressed; lb = kb.leftBracketKey.isPressed; rb = kb.rightBracketKey.isPressed;
+                f = kb.fKey.isPressed; m = kb.mKey.isPressed;
             }
             var mouse = UnityEngine.InputSystem.Mouse.current;
             if (mouse != null)
@@ -323,9 +354,7 @@ namespace Blockov.Game
             Caption(new Rect(x2 - UiKit.Px(6), y2 + k + 1, k + UiKit.Px(12), UiKit.Px(14)), "열기", cap);
             Key(new Rect(x2 + (k + g), y2, k, k), "M", m);
             Caption(new Rect(x2 + (k + g) - UiKit.Px(6), y2 + k + 1, k + UiKit.Px(12), UiKit.Px(14)), "지도", cap);
-            Key(new Rect(x2 + (k + g) * 2, y2, k, k), "[", lb);
-            Key(new Rect(x2 + (k + g) * 3, y2, k, k), "]", rb);
-            Caption(new Rect(x2 + (k + g) * 2, y2 + k + 1, k * 2 + g, UiKit.Px(14)), "줌 인/아웃", cap);
+            // 카메라 줌 [ ]은 디버그용이라 표시하지 않는다 (3.2)
 
             // 마우스 그림
             float mx = p.xMax - UiKit.Px(150), my = p.y + UiKit.Px(10);
@@ -527,7 +556,7 @@ namespace Blockov.Game
             _mapRect = r;
             UiKit.Rect(new Rect(r.x - band - 6, r.y - band - UiKit.Px(36), r.width + band * 2 + 12, r.height + band * 2 + UiKit.Px(42)), new Color(0, 0, 0, 0.8f));
             GUI.Label(new Rect(r.x - band, r.y - band - UiKit.Px(34), r.width + band * 2, UiKit.Px(28)),
-                $"<b>전체 맵</b>  <color=#aaaaaa>(M/Esc 닫기 · 휠 줌 x{_mapZoom:0.0} · 드래그 이동 · 구역 1칸 {SectorGrid.DefaultSectorSize * GameSession.RegionSectors}m · 주황 에어드랍)</color>", UiKit.Sized(UiKit.Label, 16));
+                $"<b>전체 맵</b>  <color=#aaaaaa>(M/Esc 닫기 · 휠 줌 x{_mapZoom:0.0} · 드래그 이동 · 구역 1칸 {SectorGrid.DefaultSectorSize * GameSession.RegionSectors}m · 주황 에어드랍 · 주황 원 투하 예정 · 빨강 파괴 가능 엄폐물)</color>", UiKit.Sized(UiKit.Label, 16));
 
             float v = MapViewSize;
             float minX = _mapCenter.x - v * 0.5f, minZ = _mapCenter.y - v * 0.5f;
@@ -599,7 +628,24 @@ namespace Blockov.Game
                     float s = UiKit.Px(12);
                     UiKit.Rect(new Rect(p.x - s / 2 - 2, p.y - s / 2 - 2, s + 4, s + 4), new Color(1f, 1f, 1f, blink));
                     UiKit.Rect(new Rect(p.x - s / 2, p.y - s / 2, s, s), new Color(1f, 0.5f, 0.08f));
-                    UiKit.ShadowLabel(new Rect(p.x + s, p.y - UiKit.Px(10), UiKit.Px(160), UiKit.Px(20)), $"에어드랍 {GameSession.RegionLabel(ad.SectorX, ad.SectorY)}", lab, new Color(1f, 0.9f, 0.5f));
+                    UiKit.ShadowLabel(new Rect(p.x + s, p.y - UiKit.Px(10), UiKit.Px(160), UiKit.Px(20)), "에어드랍", lab, new Color(1f, 0.9f, 0.5f));
+                }
+            }
+
+            // 에어드랍 투하 예정 위치 + 남은 초 (6.4, 클라가 1초 단위로 갱신)
+            if (_gc.Containers != null && _gc.Containers.ForecastPositions.Count > 0)
+            {
+                int sec = _gc.Containers.ForecastRemainingSeconds;
+                var lab = UiKit.Sized(UiKit.Label, 13);
+                foreach (var fp in _gc.Containers.ForecastPositions)
+                {
+                    var sp = ToScreen(fp);
+                    if (!Visible(sp)) continue;
+                    var p = L(sp);
+                    Ring(p, UiKit.Px(11), 1f, new Color(1f, 0.55f, 0.1f, 0.95f), new Color(0, 0, 0, 0), 28);
+                    UiKit.Rect(new Rect(p.x - 2, p.y - 2, 4, 4), new Color(1f, 0.55f, 0.1f));
+                    UiKit.ShadowLabel(new Rect(p.x + UiKit.Px(14), p.y - UiKit.Px(10), UiKit.Px(160), UiKit.Px(20)),
+                        $"투하 예정 {sec / 60}:{sec % 60:00}", lab, new Color(1f, 0.8f, 0.45f));
                 }
             }
 

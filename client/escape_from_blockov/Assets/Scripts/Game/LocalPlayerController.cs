@@ -330,6 +330,7 @@ namespace Blockov.Game
 
             for (byte i = 0; i < w.Pellets; i++)
                 Projectile.Spawn(GameSession.MyPlayerId, _shotSeq, i, true, _pos, GameSession.PelletDir(dir, seed, i, w.SpreadDeg), w);
+            SoundManager.Play(SoundManager.FireClip(w), 0.9f);
 
             // 특수 무기 내구도 (서버와 같은 규칙: 0이 되면 사라지고 권총으로)
             if (GameSession.Equipped == GameSession.SlotSpecial && w.Durability > 0)

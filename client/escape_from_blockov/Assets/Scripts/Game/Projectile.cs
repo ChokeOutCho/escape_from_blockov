@@ -6,7 +6,8 @@ namespace Blockov.Game
     /// <summary>
     /// 투사체 (game-spec 7.2).
     ///  - 로컬 탄(내가 쏜 탄): 매 프레임 이동 + 원격 캐릭터(화면에 그려진 위치)와 원-선분 충돌 → HitReporter에 보고, 히트 마커(예측)
-    ///  - 관찰자 탄(SC_FIRE): 이동·연출만. 사거리 도달 또는 해당 ShotSeq의 SC_DAMAGE 수신 시 제거
+    ///    멀쩡한 파괴 가능 엄폐물에 닿으면 멈추고 엄폐물 피격으로 보고 (game-spec 3.6)
+    ///  - 관찰자 탄(SC_FIRE): 이동·연출만. 사거리 도달·벽/엄폐물 충돌 또는 해당 ShotSeq의 SC_DAMAGE 수신 시 제거
     /// </summary>
     public sealed class Projectile : MonoBehaviour
     {
@@ -62,8 +63,8 @@ namespace Blockov.Game
             Vector2 from = _pos;
             Vector2 to = _pos + _dir * step;
 
-            // 벽(Wall)에 막히는 지점까지만 진행 (낮은 엄폐물은 통과)
-            float wallT = ObstacleMap.RaycastBullet(from, to);
+            // 벽·멀쩡한 파괴 가능 엄폐물에 막히는 지점까지만 진행 (낮은 엄폐물·반 블럭은 통과)
+            float wallT = ObstacleMap.RaycastBullet(from, to, out int cover);
             bool hitWall = wallT <= 1f;
             if (hitWall) to = from + (to - from) * wallT;
 
@@ -94,6 +95,8 @@ namespace Blockov.Game
             _pos = to;
             _traveled += hitWall ? step * wallT : step;
             Place();
+            if (hitWall && cover >= 0 && IsLocal && GameController.Instance != null)
+                GameController.Instance.OnLocalCoverHit(this, cover, to);
             if (hitWall || _traveled >= _range - 1e-3f) Destroy(gameObject);
         }
     }

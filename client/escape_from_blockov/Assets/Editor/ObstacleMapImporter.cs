@@ -13,11 +13,11 @@ namespace Blockov.EditorTools
 {
     /// <summary>
     /// 엄폐물 맵 도구 (메뉴: Blockov/Map/...)
-    ///  1) BMP(1픽셀 = 1m, 검정 = 벽, 회색 = 낮은 엄폐물, 흰색 = 빈 곳)를 읽어
-    ///  2) 같은 종류의 인접 픽셀을 사각형으로 병합 → Resources/Map/obstacle_map.bytes (런타임 충돌·미니맵용)
-    ///  3) 256m 청크 단위 메시를 만들어 Assets/Map/Generated/ObstacleChunks.asset에 저장
-    ///  4) TestArena 씬의 "Obstacles" 오브젝트를 새로 구성하고 저장
-    /// 서버는 같은 BMP를 직접 읽는다(GameServer/GameData.cpp). 판정 규칙·해시는 서버와 동일해야 한다.
+    ///  1) BMP(1픽셀 = 1m, 검정 = 벽, 회색 = 낮은 엄폐물, 빨강 = 파괴 가능 엄폐물, 흰색 = 빈 곳)를 읽어
+    ///  2) 같은 셀 값의 인접 픽셀을 사각형으로 병합 + 파괴 가능 엄폐물 번호 매기기 → Resources/Map/obstacle_map.bytes (런타임 충돌·미니맵·엄폐물용)
+    ///  3) 벽·낮은 엄폐물은 256m 청크 단위 메시를 만들어 Assets/Map/Generated/ObstacleChunks.asset에 저장
+    ///  4) TestArena 씬의 "Obstacles" 오브젝트를 새로 구성하고, "Covers"(CoverManager: 실행 시 파괴 가능 엄폐물 상자 생성)를 두고 저장
+    /// 서버는 같은 BMP를 직접 읽는다(GameServer/ObstacleMap.cpp). 판정 규칙·해시·엄폐물 번호는 서버와 동일해야 한다 (game-spec 3.3).
     /// </summary>
     public sealed class ObstacleMapImporter : EditorWindow
     {
@@ -49,8 +49,9 @@ namespace Blockov.EditorTools
         {
             EditorGUILayout.HelpBox(
                 "BMP 규칙: 1픽셀 = 1m×1m, 이미지 좌하단 = 월드 (0,0), 위쪽 = 북쪽(+Z)\n" +
+                "빨강(R≥150, G·B≤100) = 파괴 가능 엄폐물: 체력 = 10 × (1 + (R−150)×9/105), 같은 색으로 이어진 칸 = 1개\n" +
                 "검정(밝기<64) = 벽: 이동·총알 차단\n회색(64~223) = 낮은 엄폐물: 이동만 차단\n흰색(≥224) = 빈 곳\n" +
-                "그림판에서 '16색 비트맵' 또는 '24비트 비트맵'으로 저장하세요. 서버도 같은 파일을 읽습니다.",
+                "그림판에서 '24비트 비트맵'으로 저장하세요(16색으로 저장하면 빨강 단계가 사라짐). 서버도 같은 파일을 읽습니다.",
                 MessageType.Info);
             EditorGUILayout.BeginHorizontal();
             _bmpPath = EditorGUILayout.TextField("BMP 파일", _bmpPath);
@@ -70,8 +71,6 @@ namespace Blockov.EditorTools
                 EditorPrefs.SetString(PrefBmp, _bmpPath);
                 Debug.Log(Import(_bmpPath, _wallHeight, _lowHeight, _chunkSize));
             }
-            if (GUILayout.Button("spawns.txt 내보내기 (서버용)"))
-                Debug.Log(ExportSpawns());
         }
 
         [MenuItem("Blockov/Map/Import Obstacles (default BMP)", priority = 2)]
@@ -80,8 +79,6 @@ namespace Blockov.EditorTools
             Debug.Log(Import(EditorPrefs.GetString(PrefBmp, DefaultBmpPath), 2.5f, 0.9f, 256));
         }
 
-        [MenuItem("Blockov/Map/Export spawns.txt", priority = 3)]
-        public static void ExportSpawnsMenu() => Debug.Log(ExportSpawns());
 
         ////////////////////////////////////////////////////////////////////
         // 가져오기
@@ -91,9 +88,10 @@ namespace Blockov.EditorTools
             var sw = System.Diagnostics.Stopwatch.StartNew();
             byte[] cells = ReadBmp(bmpPath, out int imgW, out int imgH);
             uint hash = Fnv1a(cells);
-            var rects = MergeRects(cells);
-            long wallCells = 0, lowCells = 0;
-            foreach (var c in cells) { if (c == ObstacleMap.Wall) wallCells++; else if (c == ObstacleMap.Low) lowCells++; }
+            var coverOf = BuildCovers(cells, out var coverHp);
+            var rects = MergeRects(cells, coverOf);
+            long wallCells = 0, lowCells = 0, destCells = 0;
+            foreach (var c in cells) { if (c == ObstacleMap.Wall) wallCells++; else if (c == ObstacleMap.Low) lowCells++; else if ((c & 3) == ObstacleMap.Dest) destCells++; }
 
             // 1) 런타임 데이터
             Directory.CreateDirectory(Path.GetDirectoryName(BytesPath));
@@ -101,14 +99,16 @@ namespace Blockov.EditorTools
             using (var bw = new BinaryWriter(ms))
             {
                 bw.Write(Encoding.ASCII.GetBytes("BKOM"));
-                bw.Write((ushort)1);
+                bw.Write((ushort)2);
                 bw.Write((ushort)Size);
                 bw.Write(hash);
                 bw.Write(rects.Count);
                 foreach (var r in rects)
                 {
-                    bw.Write(r.Type); bw.Write((ushort)r.X); bw.Write((ushort)r.Z); bw.Write((ushort)r.W); bw.Write((ushort)r.H);
+                    bw.Write(r.Type); bw.Write((ushort)r.X); bw.Write((ushort)r.Z); bw.Write((ushort)r.W); bw.Write((ushort)r.H); bw.Write(r.Cover);
                 }
+                bw.Write(coverHp.Count);
+                foreach (var hp in coverHp) bw.Write(hp);
                 File.WriteAllBytes(BytesPath, ms.ToArray());
             }
             AssetDatabase.ImportAsset(BytesPath);
@@ -117,6 +117,7 @@ namespace Blockov.EditorTools
             var chunks = new Dictionary<Vector2Int, List<ObstacleMap.RectCell>>();
             foreach (var r in rects)
             {
+                if (r.Type == ObstacleMap.Dest) continue;     // 파괴 가능 엄폐물은 CoverManager가 실행 시 만든다 (높이가 바뀜)
                 var key = new Vector2Int(r.X / chunkSize, r.Z / chunkSize);
                 if (!chunks.TryGetValue(key, out var list)) chunks[key] = list = new List<ObstacleMap.RectCell>();
                 list.Add(r);
@@ -160,12 +161,23 @@ namespace Blockov.EditorTools
                 mr.shadowCastingMode = ShadowCastingMode.On;
                 GameObjectUtility.SetStaticEditorFlags(go, StaticEditorFlags.BatchingStatic | StaticEditorFlags.OccluderStatic | StaticEditorFlags.OccludeeStatic);
             }
+            info.CoverCount = coverHp.Count;
+            info.DestCells = destCells;
+
+            // 파괴 가능 엄폐물 루트 (CoverManager가 실행 시 obstacle_map.bytes로 상자를 만든다)
+            var covers = GameObject.Find("Covers");
+            if (covers == null) covers = new GameObject("Covers");
+            if (covers.GetComponent<CoverManager>() == null) covers.AddComponent<CoverManager>();
+
+            // 고정 스폰 지점은 쓰지 않는다 (서버가 인원 분포로 정함, game-spec 3장)
+            var spawnRoot = GameObject.Find("SpawnPoints");
+            if (spawnRoot != null) DestroyImmediate(spawnRoot);
+
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene);
 
-            string blocked = CheckSpawns(cells);
-            return $"[ObstacleMap] {bmpPath} ({imgW}x{imgH}) → wall {wallCells}, low {lowCells} cells, {rects.Count} rects, " +
-                   $"{meshes.Count} chunks, hash 0x{hash:X8}, {sw.ElapsedMilliseconds}ms{blocked}";
+            return $"[ObstacleMap] {bmpPath} ({imgW}x{imgH}) → wall {wallCells}, low {lowCells}, destructible {destCells} cells ({coverHp.Count} covers), {rects.Count} rects, " +
+                   $"{meshes.Count} chunks, hash 0x{hash:X8}, {sw.ElapsedMilliseconds}ms";
         }
 
         static Scene EnsureArenaOpen()
@@ -189,24 +201,17 @@ namespace Blockov.EditorTools
             return mat;
         }
 
-        static string CheckSpawns(byte[] cells)
-        {
-            var sp = GameObject.Find("SpawnPoints");
-            if (sp == null) return "";
-            var sb = new StringBuilder();
-            foreach (Transform t in sp.transform)
-            {
-                int x = Mathf.FloorToInt(t.position.x), z = Mathf.FloorToInt(t.position.z);
-                if (x >= 0 && z >= 0 && x < Size && z < Size && cells[(long)z * Size + x] != 0) sb.Append(' ').Append(t.name);
-            }
-            return sb.Length > 0 ? "\n[경고] 엄폐물 위에 있는 스폰:" + sb : "";
-        }
-
         ////////////////////////////////////////////////////////////////////
         // BMP (서버 ObstacleMap::LoadBmp와 동일 규칙)
         ////////////////////////////////////////////////////////////////////
+        /// <summary>셀 값: Empty 0, Low 1, Wall 2, Dest 3 + level*16 (level 1~10, 체력 = level*10)</summary>
         public static byte Classify(byte r, byte g, byte b)
         {
+            if (r >= 150 && g <= 100 && b <= 100)
+            {
+                int level = 1 + (r - 150) * 9 / 105;
+                return (byte)(ObstacleMap.Dest + level * 16);
+            }
             int lum = (299 * r + 587 * g + 114 * b) / 1000;
             if (lum < 64) return ObstacleMap.Wall;
             if (lum < 224) return ObstacleMap.Low;
@@ -272,8 +277,47 @@ namespace Blockov.EditorTools
             return h;
         }
 
-        /// <summary>같은 종류의 인접 셀을 사각형으로 탐욕 병합 (행 방향 → 열 방향)</summary>
-        public static List<ObstacleMap.RectCell> MergeRects(byte[] cells)
+        /// <summary>
+        /// 파괴 가능 엄폐물 번호: 같은 셀 값으로 상하좌우 이어진 칸 = 1개, z→x 순서로 처음 만나는 묶음부터 0,1,2... (서버 BuildCovers와 동일)
+        /// 반환: 셀 → 엄폐물 id + 1 (0 = 없음), coverHp: id별 최대 체력
+        /// </summary>
+        public static ushort[] BuildCovers(byte[] cells, out List<byte> coverHp)
+        {
+            var coverOf = new ushort[cells.LongLength];
+            coverHp = new List<byte>();
+            var stack = new Stack<int>();
+            for (int z = 0; z < Size; z++)
+                for (int x = 0; x < Size; x++)
+                {
+                    int i = z * Size + x;
+                    byte v = cells[i];
+                    if ((v & 3) != ObstacleMap.Dest || coverOf[i] != 0) continue;
+                    if (coverHp.Count >= 65000) throw new InvalidDataException("파괴 가능 엄폐물이 너무 많습니다 (최대 65000)");
+                    ushort mark = (ushort)(coverHp.Count + 1);
+                    coverHp.Add((byte)((v >> 4) * 10));
+                    coverOf[i] = mark;
+                    stack.Push(i);
+                    while (stack.Count > 0)
+                    {
+                        int cur = stack.Pop();
+                        int cx = cur % Size, cz = cur / Size;
+                        if (cx + 1 < Size) Visit(cur + 1);
+                        if (cx - 1 >= 0) Visit(cur - 1);
+                        if (cz + 1 < Size) Visit(cur + Size);
+                        if (cz - 1 >= 0) Visit(cur - Size);
+                    }
+                    void Visit(int j)
+                    {
+                        if (cells[j] != v || coverOf[j] != 0) return;
+                        coverOf[j] = mark;
+                        stack.Push(j);
+                    }
+                }
+            return coverOf;
+        }
+
+        /// <summary>같은 셀 값의 인접 셀을 사각형으로 탐욕 병합 (행 방향 → 열 방향). Type = 종류(하위 2비트), Cover = 엄폐물 id</summary>
+        public static List<ObstacleMap.RectCell> MergeRects(byte[] cells, ushort[] coverOf)
         {
             var done = new bool[cells.LongLength];
             var list = new List<ObstacleMap.RectCell>();
@@ -300,7 +344,9 @@ namespace Blockov.EditorTools
                     for (int dz = 0; dz < h; dz++)
                         for (int dx = 0; dx < w; dx++)
                             done[(long)(z + dz) * Size + x + dx] = true;
-                    list.Add(new ObstacleMap.RectCell { Type = t, X = x, Z = z, W = w, H = h });
+                    byte type = (byte)(t & 3);
+                    ushort cover = type == ObstacleMap.Dest ? (ushort)(coverOf[i] - 1) : ObstacleMap.NoCover;
+                    list.Add(new ObstacleMap.RectCell { Type = type, X = x, Z = z, W = w, H = h, Cover = cover });
                     x += w - 1;
                 }
             }
@@ -341,29 +387,6 @@ namespace Blockov.EditorTools
             mesh.RecalculateBounds();
             mesh.UploadMeshData(false);
             return mesh;
-        }
-
-        ////////////////////////////////////////////////////////////////////
-        // spawns.txt 내보내기
-        ////////////////////////////////////////////////////////////////////
-        public static string ExportSpawns()
-        {
-            var scene = EnsureArenaOpen();
-            var sp = GameObject.Find("SpawnPoints");
-            if (sp == null) return "SpawnPoints 오브젝트가 없습니다";
-            var grid = UnityEngine.Object.FindAnyObjectByType<SectorGrid>();
-            int size = grid != null ? grid.sectorSize : 64;
-            var path = Path.GetFullPath(Path.Combine(Application.dataPath, "..", "..", "..", "server", "GameServer", "spawns.txt"));
-            var sb = new StringBuilder();
-            sb.Append("# 스폰 섹터 목록 (sx sy, ").Append(size).Append("m 섹터 기준). Unity 메뉴 Blockov/Map/Export spawns.txt 로 생성\r\n");
-            int count = 0;
-            foreach (Transform t in sp.transform)
-            {
-                sb.Append(Mathf.FloorToInt(t.position.x / size)).Append(' ').Append(Mathf.FloorToInt(t.position.z / size)).Append("\r\n");
-                count++;
-            }
-            File.WriteAllBytes(path, Encoding.GetEncoding(949).GetBytes(sb.ToString()));
-            return $"[ObstacleMap] spawns {count}개 → {path}";
         }
     }
 }

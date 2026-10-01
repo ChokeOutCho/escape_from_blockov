@@ -9,6 +9,7 @@ namespace Blockov.Game
 {
     /// <summary>
     /// 가방·에어드랍 (game-spec 6.3~6.5).
+    ///  - SC_AIRDROP_FORECAST: 다음 투하 시각(서버 시각)과 예정 위치 → 전체 맵에 표시, 남은 초는 클라가 1초 단위로 계산
     ///  - SC_CONTAINER_CREATE/DELETE: 시야(3x3) 안 가방, 에어드랍 제거
     ///  - SC_AIRDROP: 방 전체 에어드랍 (IsNew=1이면 상단 공지)
     ///  - F 상호작용: 2.5m 이내 가장 가까운 대상 → F를 누르는 동안 원형 게이지(가방 1초 / 에어드랍 2초), 이동 입력·F 떼기로 취소
@@ -38,6 +39,21 @@ namespace Blockov.Game
         }
 
         public struct Notice { public string Text; public float Time; }
+
+        /// <summary>에어드랍 투하 예정 (전체 맵 표시용)</summary>
+        public readonly List<Vector2> ForecastPositions = new List<Vector2>();
+        public double ForecastDropAtMs { get; private set; }
+
+        /// <summary>투하까지 남은 초 (1초 단위 올림, 0 이상)</summary>
+        public int ForecastRemainingSeconds
+        {
+            get
+            {
+                var net = NetworkManager.Instance;
+                if (net == null) return 0;
+                return Mathf.Max(0, Mathf.CeilToInt((float)((ForecastDropAtMs - net.EstServerNow) / 1000.0)));
+            }
+        }
 
         readonly Dictionary<uint, Info> _items = new Dictionary<uint, Info>();
 
@@ -89,6 +105,14 @@ namespace Blockov.Game
             for (int i = 0; i < n; i++) Remove(r.ReadUInt32());
         }
 
+        public void OnForecast(PacketReader r)
+        {
+            ForecastDropAtMs = r.ReadUInt32();
+            int n = r.ReadByte();
+            ForecastPositions.Clear();
+            for (int i = 0; i < n; i++) ForecastPositions.Add(new Vector2(r.ReadFloat(), r.ReadFloat()));
+        }
+
         public void OnAirdrop(PacketReader r)
         {
             uint id = r.ReadUInt32();
@@ -97,7 +121,12 @@ namespace Blockov.Game
             bool isNew = r.ReadByte() != 0;
             var info = Add(id, TypeAirdrop, x, z);
             info.SectorX = sx; info.SectorY = sy;
-            if (isNew) LastNotice = new Notice { Text = $"에어드랍 투하!  {GameSession.RegionLabel(sx, sy)}", Time = Time.time };
+            if (isNew)
+            {
+                LastNotice = new Notice { Text = "에어드랍 투하!", Time = Time.time };   // 위치는 전체 맵에서 확인 (6.4)
+                // 예고했던 위치에 떨어졌으면 예고 표시를 지운다
+                ForecastPositions.RemoveAll(p => (p - new Vector2(x, z)).sqrMagnitude < 1f);
+            }
         }
 
         public void OnContents(PacketReader r)
@@ -175,6 +204,10 @@ namespace Blockov.Game
         ////////////////////////////////////////////////////////////////
         void Update()
         {
+            // 투하 시각이 1.5초 넘게 지난 예고는 지운다 (패킷 유실 등)
+            if (ForecastPositions.Count > 0 && NetworkManager.Instance != null && NetworkManager.Instance.EstServerNow > ForecastDropAtMs + 1500)
+                ForecastPositions.Clear();
+
             // 에어드랍 기둥 깜빡임 / 가방 위아래
             foreach (var i in _items.Values)
                 if (i.View != null && i.Type == TypeBag)

@@ -10,6 +10,8 @@ namespace Blockov.Game
         public int RectCount;
         public long WallCells;
         public long LowCells;
+        public long DestCells;
+        public int CoverCount;
         public string ImportedAt;
     }
 }

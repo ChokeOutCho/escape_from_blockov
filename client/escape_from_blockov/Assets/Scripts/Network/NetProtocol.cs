@@ -11,9 +11,11 @@ namespace Blockov.Net
         public const int HeaderSize = 5;
         public const int MaxPayload = 512;    // 서버 PAYLOAD_LEN_DEFAULT
 
-        public const uint ProtocolVersion = 6;   // v3: SC_ENTER_GAME에 MapHash, v4: SprintMultiplier, v5: SC_PLAYER_COUNT, v6: 아이템·구르기·에어드랍·가방
+        public const uint ProtocolVersion = 7;   // v6: 아이템·구르기·에어드랍·가방, v7: 파괴 가능 엄폐물·에어드랍 예고·스폰 플래그
         public const int NameLength = 12;     // WCHAR Name[12]
         public const int MaxHitItems = 29;    // CS_HIT_REPORT (3 + 17n <= 512)
+        public const uint HitTargetCover = 0x80000000u;   // CS_HIT_REPORT TargetID = 0x80000000 | CoverId
+        public const byte CreateFlagSpawn = 0x01;         // SC_CREATE_CHARACTERS Flags bit0 = 방금 스폰
     }
 
     /// <summary>패킷 타입. 서버 GameServer/GameProtocol.h 와 1:1.</summary>
@@ -27,7 +29,7 @@ namespace Blockov.Net
         CS_PING = 3004,
         CS_HEARTBEAT = 3005,
         CS_ROLL = 3006,             // float StartX, StartZ, DirX, DirZ
-        CS_SWITCH_WEAPON = 3007,    // BYTE Slot (1 특수 무기, 2 권총)
+        CS_SWITCH_WEAPON = 3007,    // BYTE Slot (1 특수 무기, 2 기본 무기)
         CS_USE_BANDAGE = 3008,
         CS_OPEN_CONTAINER = 3009,   // UINT32 ContainerId
         CS_TAKE_ITEM = 3010,        // UINT32 ContainerId, BYTE Item (1 특수 무기, 3 붕대)
@@ -55,6 +57,9 @@ namespace Blockov.Net
         SC_CONTAINER_DELETE = 3119, // BYTE Count, UINT32 Id[n]
         SC_CONTAINER_CONTENTS = 3120, // UINT32 Id, BYTE SpecialWeaponId, WORD Durability, BYTE Bandages
         SC_AIRDROP = 3121,          // UINT32 Id, float X, Z, BYTE SectorX, SectorY, BYTE IsNew
+        SC_COVER_HP = 3122,         // WORD CoverId, BYTE Hp
+        SC_COVER_STATE = 3123,      // BYTE Count, {WORD CoverId, BYTE Destroyed, UINT32 DestroyedAtMs, WORD RegenSec}[n]
+        SC_AIRDROP_FORECAST = 3124, // UINT32 DropAtMs, BYTE Count, {float X, Z}[n]
     }
 
     public enum EnterResult : byte

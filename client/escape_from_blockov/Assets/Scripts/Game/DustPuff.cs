@@ -2,7 +2,7 @@ using UnityEngine;
 
 namespace Blockov.Game
 {
-    /// <summary>구르기 먼지 잔상 (game-spec 4.2): 회색 구가 0.5초 동안 커졌다가 작아지며 사라진다</summary>
+    /// <summary>먼지 잔상 (구르기 game-spec 4.2, 엄폐물 피격·파괴 3.6): 회색 구가 0.5초 동안 커졌다가 작아지며 사라진다</summary>
     public sealed class DustPuff : MonoBehaviour
     {
         static readonly Color DustColor = new Color(0.62f, 0.58f, 0.5f);
@@ -26,6 +26,13 @@ namespace Blockov.Game
             d._born = Time.time;
             d._size = size;
             go.transform.localScale = Vector3.one * size * 0.5f;
+        }
+
+        /// <summary>여러 개를 흩뿌린다 (엄폐물 파괴·재생, 탄 피격 등)</summary>
+        public static void Burst(Vector3 center, int count, float spread = 0.8f, float size = 0.9f)
+        {
+            for (int i = 0; i < count; i++)
+                Spawn(center + new Vector3(Random.Range(-spread, spread), -0.25f, Random.Range(-spread, spread)), size * Random.Range(0.7f, 1.2f));
         }
 
         void Update()

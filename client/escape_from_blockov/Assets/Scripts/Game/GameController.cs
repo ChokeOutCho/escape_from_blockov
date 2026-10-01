@@ -20,6 +20,7 @@ namespace Blockov.Game
         public LocalPlayerController Local { get; private set; }
         public CameraRig Rig { get; private set; }
         public ContainerManager Containers { get; private set; }
+        public CoverManager Covers { get; private set; }
         public IEnumerable<RemoteCharacter> RemoteCharacters => _remotes.Values;
         public IReadOnlyDictionary<uint, RemoteCharacter> Remotes => _remotes;
         public List<KillFeed> Feed { get; } = new List<KillFeed>();
@@ -77,6 +78,12 @@ namespace Blockov.Game
 
             Containers = GetComponent<ContainerManager>();
             if (Containers == null) Containers = gameObject.AddComponent<ContainerManager>();
+            // 파괴 가능 엄폐물: 씬의 Covers(CoverManager). 없으면 만든다
+            Covers = CoverManager.Instance != null ? CoverManager.Instance : FindAnyObjectByType<CoverManager>();
+            if (Covers == null) Covers = new GameObject("Covers").AddComponent<CoverManager>();
+
+            // 스폰 이펙트 (본인)
+            SpawnEffect.Play(new Vector2(GameSession.SpawnX, GameSession.SpawnZ));
             if (GetComponent<GameHUD>() == null) gameObject.AddComponent<GameHUD>();
 
             net.PacketReceived += OnPacket;
@@ -132,6 +139,14 @@ namespace Blockov.Game
             LastHitMarkerTime = Time.time;
         }
 
+        // 로컬 탄이 파괴 가능 엄폐물에 맞음 → 서버에 보고 (판정은 서버, 체력은 SC_COVER_HP로)
+        public void OnLocalCoverHit(Projectile p, int coverId, Vector2 hitPoint)
+        {
+            _hits.Add(p.ShotSeq, p.Pellet, NetConst.HitTargetCover | (uint)coverId, hitPoint);
+            SoundManager.Play(SoundManager.CoverHit, 0.8f);
+            DustPuff.Spawn(new Vector3(hitPoint.x, 0.6f, hitPoint.y), 0.6f);
+        }
+
         public string NameOf(uint id)
         {
             if (id == GameSession.MyPlayerId) return GameSession.MyName;
@@ -170,6 +185,9 @@ namespace Blockov.Game
                 case PacketType.SC_CONTAINER_DELETE: if (Containers != null) Containers.OnDelete(r); break;
                 case PacketType.SC_CONTAINER_CONTENTS: if (Containers != null) Containers.OnContents(r); break;
                 case PacketType.SC_AIRDROP: if (Containers != null) Containers.OnAirdrop(r); break;
+                case PacketType.SC_AIRDROP_FORECAST: if (Containers != null) Containers.OnForecast(r); break;
+                case PacketType.SC_COVER_HP: if (Covers != null) Covers.OnCoverHp(r); break;
+                case PacketType.SC_COVER_STATE: if (Covers != null) Covers.OnCoverState(r); break;
                 case PacketType.SC_KICK:
                     // NetworkManager가 사유를 LastError에 기록. 곧 서버가 끊는다.
                     break;
@@ -187,8 +205,9 @@ namespace Blockov.Game
                 float x = r.ReadFloat(), z = r.ReadFloat(), vx = r.ReadFloat(), vz = r.ReadFloat(), aim = r.ReadFloat();
                 ushort hp = r.ReadUInt16(), maxHp = r.ReadUInt16();
                 byte weapon = r.ReadByte();
-                r.ReadByte();
+                byte flags = r.ReadByte();
                 if (id == GameSession.MyPlayerId) continue;
+                if ((flags & NetConst.CreateFlagSpawn) != 0) SpawnEffect.Play(new Vector2(x, z));   // 방금 스폰한 플레이어
 
                 if (!_remotes.TryGetValue(id, out var rc) || rc == null)
                 {
@@ -249,6 +268,7 @@ namespace Blockov.Game
             if (_remotes.TryGetValue(shooter, out var src) && src != null) src.WeaponId = weaponId;
 
             var dir = new Vector2(dx, dz);
+            SoundManager.PlayAt(SoundManager.FireClip(w), new Vector2(ox, oz));
             for (byte i = 0; i < w.Pellets; i++)
                 _observerShots.Add(Projectile.Spawn(shooter, seq, i, false, new Vector2(ox, oz), GameSession.PelletDir(dir, seed, i, w.SpreadDeg), w));
         }
@@ -295,7 +315,9 @@ namespace Blockov.Game
             {
                 GameSession.Hp = hp;
                 if (LocalView != null) LocalView.OnDamaged(hp);
+                SoundManager.Play(SoundManager.Hurt);
             }
+            if (attacker == GameSession.MyPlayerId && victim != GameSession.MyPlayerId) SoundManager.Play(SoundManager.Hit);
             else if (_remotes.TryGetValue(victim, out var rc) && rc != null)
             {
                 rc.OnDamaged(hp);
@@ -318,6 +340,7 @@ namespace Blockov.Game
             uint victim = r.ReadUInt32();
             uint killer = r.ReadUInt32();
             Feed.Add(new KillFeed { Text = $"{NameOf(killer)}  ▶  {NameOf(victim)}", Time = Time.time });
+            if (killer == GameSession.MyPlayerId && victim != GameSession.MyPlayerId) SoundManager.Play(SoundManager.Kill);
             if (Feed.Count > 5) Feed.RemoveAt(0);
 
             if (victim == GameSession.MyPlayerId)
