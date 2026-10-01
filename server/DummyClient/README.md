@@ -48,7 +48,8 @@ MSBuild DummyClient.sln /p:Configuration=Release /p:Platform=x64
 5. **에어드랍 특수 무기** (game-spec 17.5): 교전 중이 아니고 `loot_range`(50m) 안에 에어드랍이 있으면 그쪽으로 걸어가(막히면 잠시 옆으로 돌아감) 1.5m 안에서 멈추고 2.3초 뒤 `CS_OPEN_CONTAINER` → 특수 무기가 있으면 `CS_TAKE_ITEM` → 얻으면 바로 1번으로 전환해 사용(샷건은 산탄 5발 각각 판정·보고, 내구도 0이면 권총). 30초 안에 못 열면 포기. 이미 특수 무기가 있으면 가지 않는다
 6. **사망**: 재접속 모드면 `reconnect_delay_ms` 뒤 다시 입장, 퇴장 모드면 빠진다
 7. 대상에는 사람 플레이어와 다른 더미가 모두 포함된다
-8. 그 밖의 v6 패킷(가방·체력 등)은 받기만 하고 무시한다
+8. 파괴 가능한 엄폐물(맵의 빨강 칸)은 상태를 추적하지 않고 항상 총알을 막는 것으로 본다. 시야선이 확보된 대상만 쏘므로 엄폐물을 쏘지 않는다(이동은 파괴 여부와 무관하게 막힘)
+9. 그 밖의 패킷(가방·체력·엄폐물 상태·에어드랍 예고 등)은 받기만 하고 무시한다
 
 ## 설정 (`dummy_config.txt`)
 
@@ -86,6 +87,8 @@ MSBuild DummyClient.sln /p:Configuration=Release /p:Platform=x64
 | `DISCONNECT` | 게임 중(InGame) 우리가 끊지 않았는데 연결이 끊김. 사망 후 서버의 정상 종료(3초 뒤)와 인원 축소로 인한 종료는 제외 |
 | `ENTER_FAIL` | 입장 중 끊김, 입장 거부(SERVER_FULL / VERSION_MISMATCH / INVALID_NAME), 입장 타임아웃(10초) |
 | `CONNECT_FAIL` | TCP 접속 실패(서버 꺼짐, 포트 고갈 등) |
+| `MAP_MISMATCH` | 엄폐물 맵을 못 읽었거나 서버 맵 해시와 다름 (1회) |
+| `CRASH` | 더미 프로그램이 죽음. 덤프는 `dumps/Dump_YYYYMMDD_HHMMSS_<pid>.dmp` (game-spec 10.8) |
 
 한 줄 형식:
 

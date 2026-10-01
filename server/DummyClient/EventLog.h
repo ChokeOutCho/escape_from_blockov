@@ -14,6 +14,7 @@ public:
 	bool Open(const std::string& header);
 	void Close();
 	void Write(const char* type, const char* fmt, ...);
+	void WriteNoWait(const char* type, const char* msg);
 	void Flush();
 
 	const std::string& Path() const { return m_path; }

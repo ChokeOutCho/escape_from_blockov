@@ -56,6 +56,16 @@ void EventLog::Write(const char* type, const char* fmt, ...)
 	ReleaseSRWLockExclusive(&g_logLock);
 }
 
+// 크래시 처리기용: 잠금을 기다리지 않는다 (죽은 스레드가 잠금을 쥐고 있을 수 있음)
+void EventLog::WriteNoWait(const char* type, const char* msg)
+{
+	char ts[64];
+	TimeStamp(ts, sizeof(ts));
+	bool locked = TryAcquireSRWLockExclusive(&g_logLock) != 0;
+	if (m_fp) { fprintf(m_fp, "%s [%s] %s\n", ts, type, msg); fflush(m_fp); }
+	if (locked) ReleaseSRWLockExclusive(&g_logLock);
+}
+
 void EventLog::Flush()
 {
 	AcquireSRWLockExclusive(&g_logLock);

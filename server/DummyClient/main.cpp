@@ -11,6 +11,7 @@
 #include "Dummy.h"
 #include "Network.h"
 #include "EventLog.h"
+#include "../ContentEchoServer/Utils/CrashDump.h"
 #include <process.h>
 #include <conio.h>
 #include <psapi.h>
@@ -343,6 +344,14 @@ namespace
 	}
 }
 
+// 크래시 직전 이벤트 로그에 한 줄 (game-spec 10.8). 덤프는 CrashDump가 dumps/에 쓴다
+static void OnCrash(unsigned long code, const char* reason, const char* dumpPath)
+{
+	char msg[256];
+	snprintf(msg, sizeof(msg), "%s exception 0x%08lX -> %s", reason, code, dumpPath);
+	g_eventLog.WriteNoWait("CRASH", msg);
+}
+
 int main(int argc, char** argv)
 {
 	// ---- 인자 ----
@@ -365,6 +374,7 @@ int main(int argc, char** argv)
 	bool headless = duration > 0;
 
 	FixWorkingDirectory(configPath);
+	CrashDump::SetOnCrash(OnCrash);
 	if (!g_cfg.Load(configPath.c_str()))
 		printf("%s 없음 → 기본값 사용\n", configPath.c_str());
 	if (!argServer.empty())
