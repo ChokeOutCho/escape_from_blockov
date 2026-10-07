@@ -2,7 +2,7 @@
 
 > 작성일: 2026-10-01
 > 대상: Unity 6000.6.3f1 클라이언트(`client/escape_from_blockov`), NetLib 기반 게임 서버(`server/GameServer`), WS↔TCP 게이트웨이(`server/gateway`), 더미 클라이언트(`server/DummyClient`)
-> 선행 문서: `server/ContentEchoServer/CONTENT_SERVER_LIBRARY.md`, 맵 섹터 규격(`claude/map-sector-spec.md`)
+> 선행 문서: `server/ContentEchoServer/CONTENT_SERVER_LIBRARY.md`, 맵 섹터 규격(3장)
 > 이 문서는 **현재 동작**을 기술한다. 버전별 변경 내역은 맨 끝 「변경 이력」에만 짧게 남긴다.
 
 ---

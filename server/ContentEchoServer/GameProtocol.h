@@ -3,7 +3,7 @@
 #pragma comment(lib, "Winmm.lib")
 
 ////////////////////////////////////////////////////////////////////////
-// escape_from_blockov 게임 프로토콜 (claude/game-spec.md 7장)
+// escape_from_blockov 게임 프로토콜 (GAME_SPEC.md 7장)
 //  - 리틀 엔디안, pack(1), NetHeader(5B) 뒤 Payload = WORD Type + 본문
 //  - C->S 3000~3099, S->C 3100~3199
 //  - 페이로드 최대 PAYLOAD_LEN_DEFAULT(512)

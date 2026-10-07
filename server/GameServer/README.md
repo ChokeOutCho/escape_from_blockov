@@ -1,6 +1,6 @@
 # GameServer
 
-escape_from_blockov 게임 서버 (프로젝트 명세 `claude/game-spec.md`, 저장소 사본 `GAME_SPEC.md`). NetLib(`../ContentEchoServer/NetLib`) 위에서 동작한다.
+escape_from_blockov 게임 서버 (명세 `GAME_SPEC.md`). NetLib(`../ContentEchoServer/NetLib`) 위에서 동작한다.
 
 ## 빌드 / 실행
 1. `GameServer.sln`을 Visual Studio 2022(v143)로 열고 **Release | x64** 빌드.
@@ -31,9 +31,3 @@ escape_from_blockov 게임 서버 (프로젝트 명세 `claude/game-spec.md`, �
 | `test/obs` 10502 | `node test/obstacle_test.js run 127.0.0.1 10502` |
 | `test/cover` 10503 | `node test/cover_test.js run 127.0.0.1 10503` (맵: `node test/cover_test.js make test/cover/cover_map.bmp`) |
 | `test/spawn` 10504 | `node test/cover_test.js spawn 127.0.0.1 10504` |
-
-리눅스에서 로직만 빌드:
-```
-g++ -std=c++20 -DGAME_STUB_NETLIB -I. -Itest *.cpp test/StubNetLib.cpp -o gameserver -lpthread
-cd test/run && ../../gameserver &  node ../bot_test.js 127.0.0.1 10501
-```

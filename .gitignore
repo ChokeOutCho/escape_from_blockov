@@ -3,7 +3,11 @@
 
 # Visual Studio / MSBuild
 .vs/
-**/x64/
+**/x64/*
+# 서버 실행 파일은 올린다 (clone 후 start_server.bat 으로 바로 실행)
+!server/GameServer/x64/Release/
+server/GameServer/x64/Release/*
+!server/GameServer/x64/Release/GameServer.exe
 *.vcxproj.user
 server/GameServer/GameServer/
 
@@ -19,3 +23,12 @@ client/escape_from_blockov/Data/
 Thumbs.db
 Desktop.ini
 .DS_Store
+
+# AI 도구(Claude) 관련 파일 — 저장소에 올리지 않음
+CLAUDE.md
+CLAUDE.local.md
+.claude/
+.mcp.json
+Claude outputs/
+skills/
+client/escape_from_blockov/AgentScripts/

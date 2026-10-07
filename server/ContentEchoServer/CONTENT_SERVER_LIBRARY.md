@@ -68,7 +68,7 @@
 
 ### 2.4 게임 서버 (`server/GameServer/`)
 
-이 라이브러리를 사용하는 실제 게임 서버. 별도 VS 솔루션(`GameServer.sln`)이 `../ContentEchoServer/NetLib`, `Utils` 소스를 직접 컴파일한다. 구성·실행은 `server/GameServer/README.md`, 설계는 프로젝트 문서 `claude/game-spec.md` 9~10장.
+이 라이브러리를 사용하는 실제 게임 서버. 별도 VS 솔루션(`GameServer.sln`)이 `../ContentEchoServer/NetLib`, `Utils` 소스를 직접 컴파일한다. 구성·실행은 `server/GameServer/README.md`, 설계는 `GAME_SPEC.md` 9~10장.
 - 패킷 타입 상수는 `PT_` 접두사를 쓴다 (`SC_MOVE` 등이 windows.h의 `WM_SYSCOMMAND` 매크로와 충돌).
 - `NOMINMAX` 정의 필수 (`std::min/max` 사용).
 - `test/`: 리눅스 스텁 NetLib(`GAME_STUB_NETLIB`)로 게임 로직을 g++ 빌드해 Node 봇으로 검증하는 하네스.

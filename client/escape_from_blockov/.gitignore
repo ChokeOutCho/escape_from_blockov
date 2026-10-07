@@ -18,7 +18,9 @@
 /[Tt]emp/
 /[Oo]bj/
 /[Bb]uild/
-/[Bb]uilds/
+/[Bb]uilds/*
+# WebGL 빌드 결과물은 올린다 (start_server.bat 의 웹서버가 제공)
+!/[Bb]uilds/WebGL/
 /[Ll]ogs/
 /[Uu]ser[Ss]ettings/
 *.log

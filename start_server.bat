@@ -7,7 +7,8 @@ rem    start_server.bat web       + 브라우저로 http://localhost:8090/ 열기
 rem                               외부 접속: 공유기 TCP 8090 포트포워딩 + 방화벽 허용 (GAME_SPEC.md 18.4)
 rem    start_server.bat build     서버를 Release x64로 다시 빌드한 뒤 실행
 rem    (web, build 는 함께 쓸 수 있음)   종료: stop_server.bat
-rem  필요: Node.js 18+, (빌드 시) Visual Studio 2022
+rem  필요: Node.js 18+, Visual C++ 재배포 패키지(x64), (빌드 시) Visual Studio 2022
+rem  서버 실행 파일(x64\Release)과 WebGL 빌드는 저장소에 포함되어 있어 clone 후 바로 실행된다.
 rem ==========================================================================
 set "ROOT=%~dp0"
 set "SERVER_DIR=%ROOT%server\GameServer"
@@ -25,6 +26,12 @@ for %%A in (%*) do (
 where node >nul 2>nul
 if errorlevel 1 (
   echo [오류] Node.js가 필요합니다: https://nodejs.org
+  pause
+  exit /b 1
+)
+
+if not exist "%SystemRoot%\System32\vcruntime140_1.dll" (
+  echo [오류] Visual C++ 재배포 패키지^(x64^)가 필요합니다: https://aka.ms/vs/17/release/vc_redist.x64.exe
   pause
   exit /b 1
 )

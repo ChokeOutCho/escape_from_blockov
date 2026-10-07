@@ -6,7 +6,7 @@
     "zerocopy": true,
     "sendbuf": 1000,
 
-    "room_count": 4,
+    "room_count": 1,
     "room_capacity": 300,
     "battle_tick_ms": 33,
     "entry_tick_ms": 50,
