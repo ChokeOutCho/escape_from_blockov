@@ -6,6 +6,7 @@
 
 
 플레이 장면:
+
 ![play1](/play1.gif)
 ![play2](/play2.gif)
 
