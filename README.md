@@ -31,7 +31,7 @@
 | 시야(AOI) | 50m 섹터 격자에서 주변 3×3 섹터만 보이고, 패킷도 그 범위에만 브로드캐스트 |
 | 피격 판정 | **오토타게팅**: 사수 클라이언트가 명중을 판정해 모아서 보고하면, 서버가 발사 시각 기준으로 대상의 **과거 위치를 되감아** 거리·각도·시간을 검증 |
 | 이동 | 클라이언트 권위 + 서버 검증(속도, 맵 경계, 엄폐물). 위반하면 위치를 보정 |
-| 네트워크 | 클라이언트는 WebSocket만 사용. 현재는 WS↔TCP 게이트웨이가 서버까지 중계하고, NetLib에 WebSocket을 직접 넣는 것이 다음 단계 |
+| 네트워크 | 클라이언트는 WebSocket만 사용. 현재는 WS↔TCP 게이트웨이가 서버까지 중계하고, 확장이 필요하다면 NetLib에 WebSocket을 직접 넣는 것을 고려 |
 | 게임 요소 | 권총·샷건·저격총(내구도), 붕대, 구르기, 달리기, 에어드랍, 사망 시 가방, 벽·낮은 엄폐물·파괴 가능한 엄폐물, 상위 3위 랭킹 |
 
 
@@ -84,7 +84,6 @@ escape_from_blockov/
 | 클라이언트 | Unity 6000.6.3f1, WebGL 빌드 |
 | 게이트웨이 · 웹서버 · 테스트 봇 | Node.js 18+ |
 
-- 서버 C++ 소스는 **CP949 + CRLF** 인코딩입니다. 편집할 때 인코딩을 유지해 주세요(`.gitattributes`가 줄바꿈 변환을 막습니다).
 - 서버 설정: `server/GameServer/game_config.txt`, 무기표: `server/GameServer/weapons.txt`
 - 테스트: `server/GameServer/test/` (Node.js 시나리오 봇), 부하 테스트: `server/DummyClient/README.md`
 
